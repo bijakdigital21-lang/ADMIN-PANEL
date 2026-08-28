@@ -151,9 +151,11 @@
                         <span class="text-xs text-slate-400">${user.reseller_email || ''}</span>
                     </td>
                     <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
-                    <td class="py-3 px-4 text-right space-x-1">
-                        <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
-                        <button onclick="rejectUser(${index})" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Reject</button>
+                    <td class="py-3 px-4 text-right">
+                        <div class="inline-flex items-center space-x-3">
+                            <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
+                            <button onclick="rejectUser(${index})" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Reject</button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
