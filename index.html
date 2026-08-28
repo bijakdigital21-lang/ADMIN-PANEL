@@ -22,7 +22,7 @@
   <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getDatabase, ref, set, get, child, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         // Firebase Config Anda
         const firebaseConfig = {
@@ -50,7 +50,7 @@
         window.refreshData = function() {
             loadPendingTable();
             loadApprovedTable();
-            alert("Data berjaya dikemaskini daripada Firebase!");
+            alert("Data berjaya dikemaskini!");
         }
 
         // Tukar Tab Admin (Pending vs Approved)
@@ -73,67 +73,51 @@
             }
         }
 
-        // 3. Papar Senarai Pending dari Firebase
-        window.loadPendingTable = async function() {
+        // 3. Papar Senarai Pending di Dashboard Admin (Customer + Reseller)
+        function loadPendingTable() {
             const tbody = document.getElementById('pending_table_body');
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Memuatkan data...</td></tr>`;
-            
-            try {
-                const dbRef = ref(db);
-                const snapshot = await get(child(dbRef, 'pending_users'));
-                tbody.innerHTML = '';
+            tbody.innerHTML = '';
+            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
 
-                if (!snapshot.exists()) {
-                    tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada senarai menunggu.</td></tr>`;
-                    return;
-                }
-
-                const pendingData = snapshot.val();
-                Object.keys(pendingData).forEach((key) => {
-                    const user = pendingData[key];
-                    const tr = document.createElement('tr');
-                    tr.className = "border-b border-slate-100";
-                    tr.innerHTML = `
-                        <td class="py-3 px-4">
-                            <span class="font-semibold text-slate-800">${user.nama}</span><br>
-                            <span class="text-xs text-slate-500">${user.email} (${user.nofon})</span>
-                        </td>
-                        <td class="py-3 px-4">
-                            <span class="font-medium text-blue-600">${user.reseller_nama || '-'}</span><br>
-                            <span class="text-xs text-slate-400">${user.reseller_email || ''}</span>
-                        </td>
-                        <td class="py-3 px-4 text-xs text-slate-500">${user.date || '-'}</td>
-                        <td class="py-3 px-4 text-right">
-                            <button onclick="approveUser('${key}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            } catch (error) {
-                console.error("Ralat memuatkan pending:", error);
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Gagal memuatkan data.</td></tr>`;
+            if (pendingList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada senarai menunggu.</td></tr>`;
+                return;
             }
+
+            pendingList.forEach((user, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-slate-100";
+                tr.innerHTML = `
+                    <td class="py-3 px-4">
+                        <span class="font-semibold text-slate-800">${user.nama}</span><br>
+                        <span class="text-xs text-slate-500">${user.email} (${user.nofon})</span>
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="font-medium text-blue-600">${user.reseller_nama || '-'}</span><br>
+                        <span class="text-xs text-slate-400">${user.reseller_email || ''}</span>
+                    </td>
+                    <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
+                    <td class="py-3 px-4 text-right">
+                        <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        // 4. Papar Senarai Approved dari Firebase
-        window.loadApprovedTable = async function() {
+        // 4. Papar Senarai Telah Diluluskan (Approved) (Customer + Reseller)
+        function loadApprovedTable() {
             const tbody = document.getElementById('approved_table_body');
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Memuatkan data...</td></tr>`;
+            tbody.innerHTML = '';
+            let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
 
-            try {
-                const dbRef = ref(db);
-                const snapshot = await get(child(dbRef, 'approved_users'));
-                tbody.innerHTML = '';
+            if (approvedList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
+                return;
+            }
 
-                if (!snapshot.exists()) {
-                    tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
-                    return;
-                }
-
-                const approvedData = snapshot.val();
-                Object.keys(approvedData).forEach((key) => {
-                    const user = approvedData[key];
-                    const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
+            approvedList.forEach((user) => {
+                const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
 
 Terima kasih kerana memilih Grammar Hub! 💙
 
@@ -168,56 +152,45 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
 💙 Selamat belajar!
 Semoga Grammar Hub membantu anda.`;
 
-                    let cleanPhone = user.nofon ? user.nofon.replace(/\D/g,'') : '';
-                    if(cleanPhone.startsWith('0')) {
-                        cleanPhone = '6' + cleanPhone;
-                    }
+                let cleanPhone = user.nofon.replace(/\D/g,'');
+                if(cleanPhone.startsWith('0')) {
+                    cleanPhone = '6' + cleanPhone;
+                }
 
-                    const encodedMsg = encodeURIComponent(rawMsg);
-                    const waLink = `https://wa.me/${cleanPhone}?text=${encodedMsg}`;
+                const encodedMsg = encodeURIComponent(rawMsg);
+                const waLink = `https://wa.me/${cleanPhone}?text=${encodedMsg}`;
 
-                    const tr = document.createElement('tr');
-                    tr.className = "border-b border-slate-100";
-                    tr.innerHTML = `
-                        <td class="py-3 px-4 font-medium text-slate-800">
-                            ${user.nama}<br><span class="text-xs text-slate-400">${user.email}</span>
-                        </td>
-                        <td class="py-3 px-4">
-                            <span class="font-medium text-blue-600">${user.reseller_nama || '-'}</span>
-                        </td>
-                        <td class="py-3 px-4">
-                            <a href="${waLink}" target="_blank" class="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-emerald-200 transition" title="Klik untuk hantar WhatsApp">
-                                📱 ${user.nofon} ↗
-                            </a>
-                        </td>
-                        <td class="py-3 px-4 text-xs text-slate-500">${user.date || '-'}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            } catch (error) {
-                console.error("Ralat memuatkan approved:", error);
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Gagal memuatkan data.</td></tr>`;
-            }
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-slate-100";
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-medium text-slate-800">
+                        ${user.nama}<br><span class="text-xs text-slate-400">${user.email}</span>
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="font-medium text-blue-600">${user.reseller_nama || '-'}</span>
+                    </td>
+                    <td class="py-3 px-4">
+                        <a href="${waLink}" target="_blank" class="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-emerald-200 transition" title="Klik untuk hantar WhatsApp">
+                            📱 ${user.nofon} ↗
+                        </a>
+                    </td>
+                    <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        // 5. Proses Approve (Alihkan dari pending_users ke approved_users & users dalam Firebase)
-        window.approveUser = async function(key) {
-            if (!confirm(`Adakah anda pasti untuk approve pengguna ini?`)) return;
+        // 5. Proses Approve (Firebase + EmailJS + Pindah ke Approved List)
+        window.approveUser = async function(index) {
+            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
+            const user = pendingList[index];
+
+            if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
             try {
-                // Ambil data user dari pending_users di Firebase
-                const userSnapshot = await get(child(ref(db), 'pending_users/' + key));
-                if (!userSnapshot.exists()) {
-                    alert("Data pengguna tidak dijumpai.");
-                    return;
-                }
-                const user = userSnapshot.val();
-
-                // Cipta akaun Authentication
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 const firebaseUser = userCredential.user;
 
-                // Simpan dalam path 'users/'
                 await set(ref(db, 'users/' + firebaseUser.uid), {
                     nama: user.nama,
                     email: user.email,
@@ -228,7 +201,6 @@ Semoga Grammar Hub membantu anda.`;
                     createdAt: new Date().toISOString()
                 });
 
-                // Hantar emel menggunakan EmailJS
                 const templateParams = {
                     to_name: user.nama,
                     to_email: user.email,
@@ -236,11 +208,12 @@ Semoga Grammar Hub membantu anda.`;
                 };
                 await emailjs.send('service_hd5rpgc', 'template_9sh4gw2', templateParams);
 
-                // Simpan ke senarai approved_users di Firebase
-                await set(ref(db, 'approved_users/' + key), user);
+                pendingList.splice(index, 1);
+                localStorage.setItem('pending_users', JSON.stringify(pendingList));
 
-                // Padam dari pending_users di Firebase
-                await remove(ref(db, 'pending_users/' + key));
+                let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
+                approvedList.unshift(user);
+                localStorage.setItem('approved_users', JSON.stringify(approvedList));
 
                 alert(`Berjaya approve ${user.nama}! Akaun dicipta dan emel telah dihantar.`);
                 loadPendingTable();
@@ -260,7 +233,7 @@ Semoga Grammar Hub membantu anda.`;
         <div class="bg-slate-900 text-white px-8 py-5 flex justify-between items-center">
             <div>
                 <h3 class="font-bold text-xl tracking-tight">GRAMMAR HUB</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Admin Control Panel (Firebase Cloud)</p>
+                <p class="text-xs text-slate-400 mt-0.5">Admin Control Panel (Auto-Login)</p>
             </div>
             <div class="flex items-center gap-3">
                 <button onclick="refreshData()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow transition flex items-center gap-1">
@@ -296,8 +269,7 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="pending_table_body">
-                                <!-- Data dimuatkan secara automatik dari Firebase -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
@@ -315,8 +287,7 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="approved_table_body">
-                                <!-- Data dimuatkan secara automatik dari Firebase -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
