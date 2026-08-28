@@ -46,6 +46,13 @@
             loadApprovedTable();
         });
 
+        // Fungsi Refresh Manual
+        window.refreshData = function() {
+            loadPendingTable();
+            loadApprovedTable();
+            alert("Data berjaya dikemaskini!");
+        }
+
         // Tukar Tab Admin (Pending vs Approved)
         window.switchTab = function(tabName) {
             const pendingSec = document.getElementById('section_pending');
@@ -228,9 +235,14 @@ Semoga Grammar Hub membantu anda.`;
                 <h3 class="font-bold text-xl tracking-tight">GRAMMAR HUB</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Admin Control Panel (Auto-Login)</p>
             </div>
-            <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold px-3 py-1 rounded-full">
-                ● Sesi Admin Aktif
-            </span>
+            <div class="flex items-center gap-3">
+                <button onclick="refreshData()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow transition flex items-center gap-1">
+                    🔄 Refresh Data
+                </button>
+                <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold px-3 py-1 rounded-full">
+                    ● Sesi Admin Aktif
+                </span>
+            </div>
         </div>
 
         <div class="p-8">
@@ -257,8 +269,7 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="pending_table_body">
-                                <!-- Data dimuatkan secara automatik -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
@@ -276,8 +287,7 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="approved_table_body">
-                                <!-- Data dimuatkan secara automatik -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
