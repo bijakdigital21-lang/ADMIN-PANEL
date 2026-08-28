@@ -21,55 +21,47 @@
 
   <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // Firebase Config Anda (Dikemas kini mengikut rujukan anda)
+        // Firebase Config Anda
         const firebaseConfig = {
-            apiKey: "AIzaSyCxxEsifGhdkTj_3EOdjflPS__B_SKRSZY",
-            authDomain: "admin-f72e5.firebaseapp.com",
-            projectId: "admin-f72e5",
-            storageBucket: "admin-f72e5.firebasestorage.app",
-            messagingSenderId: "523370880023",
-            appId: "1:523370880023:web:883b422a9611abb2889052",
-            databaseURL: "https://grammar-hub-6af80-default-rtdb.asia-southeast1.firebasedatabase.app"
+            apiKey: "AIzaSyDXc06B8WLtqjkG0aScBHrd3L3M-n_5okc",
+            authDomain: "grammar-hub-6af80.firebaseapp.com",
+            databaseURL: "https://grammar-hub-6af80-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "grammar-hub-6af80",
+            storageBucket: "grammar-hub-6af80.firebasestorage.app",
+            messagingSenderId: "1092171234032",
+            appId: "1:1092171234032:web:7cc8efefb812993500e035"
         };
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getDatabase(app);
-        const provider = new GoogleAuthProvider();
 
-        // Senarai Emel Admin yang dibenarkan (Tukar emel di bawah kepada emel Google anda)
-        const allowedAdmins = [
-            "admin@gmail.com", 
-            "gantimelanda@gmail.com"
-        ];
-
-        // Pantau status log masuk Firebase Auth
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // Semak sama ada emel berada dalam senarai dibenarkan (Opsional, atau benarkan semua akaun Google)
-                if (allowedAdmins.length > 0 && !allowedAdmins.includes(user.email)) {
-                    alert("Akaun Google anda tidak mempunyai akses Admin!");
-                    signOut(auth);
-                    return;
-                }
-
-                // Jika sah, buka dashboard
-                document.getElementById('login_section').classList.add('hidden');
-                document.getElementById('admin_dashboard').classList.remove('hidden');
-                document.getElementById('admin_user_info').innerText = `Log masuk sebagai: ${user.email}`;
-                loadPendingTable();
-                loadApprovedTable();
+        // 1. Fungsi Security Gate (Password Seluruh Paparan: 019681)
+        window.checkSitePassword = function() {
+            const pass = document.getElementById('site_pass').value;
+            const errorMsg = document.getElementById('site_pass_error');
+            
+            if (pass === "019681") {
+                document.getElementById('site_lock_screen').classList.add('hidden');
+                document.getElementById('main_content').classList.remove('hidden');
             } else {
-                document.getElementById('login_section').classList.remove('hidden');
-                document.getElementById('admin_dashboard').classList.add('hidden');
+                errorMsg.classList.remove('hidden');
+                document.getElementById('site_pass').value = '';
             }
-        });
+        }
 
-        // 1. Handle Pendaftaran & Redirect Auto-Fill ke BCL Page
+        // Membolehkan tekan 'Enter' untuk login
+        window.handleSitePassKey = function(event) {
+            if (event.key === 'Enter') {
+                checkSitePassword();
+            }
+        }
+
+        // 2. Handle Pendaftaran & Redirect Auto-Fill ke BCL Page
         window.handleRegister = function(event) {
             event.preventDefault();
 
@@ -109,32 +101,28 @@
             window.location.href = targetUrl;
         }
 
-        // 2. Fungsi Google Login untuk Admin
-        window.loginWithGoogle = function() {
-            signInWithPopup(auth, provider)
-            .then((result) => {
-                // Berjaya log masuk
-            }).catch((error) => {
-                console.error("Ralat Google Login:", error);
-                alert("Gagal log masuk dengan Google: " + error.message);
-            });
-        }
-
-        // Fungsi Logout Admin
-        window.adminLogout = function() {
-            signOut(auth).then(() => {
-                closeAdmin();
-            }).catch((error) => {
-                console.error("Ralat Logout:", error);
-            });
+        // 3. Fungsi Admin Login (Dalam Modal)
+        window.checkAdminLogin = function() {
+            const pass = document.getElementById('admin_pass').value;
+            if (pass === "019681") {
+                document.getElementById('login_section').classList.add('hidden');
+                document.getElementById('admin_dashboard').classList.remove('hidden');
+                loadPendingTable();
+                loadApprovedTable();
+            } else {
+                alert("Password Admin Salah!");
+            }
         }
 
         window.closeAdmin = function() {
             document.getElementById('admin_modal').classList.add('hidden');
+            document.getElementById('admin_pass').value = '';
         }
 
         window.openAdminModal = function() {
             document.getElementById('admin_modal').classList.remove('hidden');
+            document.getElementById('login_section').classList.remove('hidden');
+            document.getElementById('admin_dashboard').classList.add('hidden');
         }
 
         // Tukar Tab Admin (Pending vs Approved)
@@ -157,7 +145,7 @@
             }
         }
 
-        // 3. Papar Senarai Pending di Dashboard Admin
+        // 4. Papar Senarai Pending di Dashboard Admin
         function loadPendingTable() {
             const tbody = document.getElementById('pending_table_body');
             tbody.innerHTML = '';
@@ -192,7 +180,7 @@
             });
         }
 
-        // 4. Papar Senarai Telah Diluluskan (Approved)
+        // 5. Papar Senarai Telah Diluluskan (Approved)
         function loadApprovedTable() {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
@@ -204,7 +192,8 @@
             }
 
             approvedList.forEach((user) => {
-                const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!\n\nTerima kasih kerana memilih Grammar Hub! 💙\n\nEmail: ${user.email}\nPassword: ${user.password}`;
+                const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!\n\nTerima kasih kerana memilih Grammar Hub! 💙\n\nKami sangat teruja untuk anda mula belajar, berlatih dan meneroka pelbagai bahan pembelajaran yang telah disediakan.\n\n📚 AKSES GRAMMAR HUB ANDA\nhttps://bijakdigital21-lang.github.io/Grammarhub./\n\n🔐 MAKLUMAT LOG MASUK\nEmail: ${user.email}\nPassword: ${user.password}\n\n📌 Sila tukar password anda di laman profile selepas berjaya log masuk.`;
+
                 let cleanPhone = user.nofon.replace(/\D/g,'');
                 if(cleanPhone.startsWith('0')) {
                     cleanPhone = '6' + cleanPhone;
@@ -233,7 +222,7 @@
             });
         }
 
-        // 5. Proses Approve
+        // 6. Proses Approve
         window.approveUser = async function(index) {
             let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
             const user = pendingList[index];
@@ -241,8 +230,6 @@
             if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
             try {
-                // Nota: Bahagian Auth ni menggunakan client auth sementara untuk simpan data user baru
-                // Anda boleh sesuaikan jika perlukan instance auth berasingan
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 const firebaseUser = userCredential.user;
 
@@ -280,7 +267,7 @@
             }
         }
 
-        // 6. Proses Reject
+        // 7. Proses Reject
         window.rejectUser = function(index) {
             let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
             const user = pendingList[index];
@@ -299,102 +286,113 @@
 
     <div class="absolute inset-0 bg-black/40 z-0"></div>
 
-    <div class="absolute top-4 right-4 z-10">
-        <button onclick="openAdminModal()" class="bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-lg transition backdrop-blur-sm">
-            🔐 Admin Panel
-        </button>
+    <!-- SKRIN KUNCI UTAMA (PASSWORD SEMUA PAPARAN) -->
+    <div id="site_lock_screen" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center space-y-6 border border-slate-200">
+            <div class="space-y-2">
+                <div class="text-4xl mb-2">🔒</div>
+                <h3 class="text-xl font-bold text-slate-900">Akses Terhad</h3>
+                <p class="text-sm text-slate-500">Sila masukkan kata laluan untuk membuka sistem pendaftaran.</p>
+            </div>
+            
+            <div class="space-y-3">
+                <input type="password" id="site_pass" placeholder="Masukkan Password" onkeypress="handleSitePassKey(event)"
+                    class="w-full px-4 py-3 border border-slate-300 rounded-xl text-center tracking-widest text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none">
+                
+                <p id="site_pass_error" class="text-xs text-rose-600 hidden font-medium">Kata laluan salah! Sila cuba lagi.</p>
+                
+                <button onclick="checkSitePassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition shadow-lg">
+                    Buka Sistem
+                </button>
+            </div>
+        </div>
     </div>
 
-    <div class="relative z-10 bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/25 my-6">
-        <div class="text-center mb-6">
-            <h2 class="text-2xl font-bold text-slate-900 tracking-tight">GRAMMAR HUB</h2>
-             <h2 class="text-xl font-semibold text-blue-600 tracking-wide mt-1">CUSTOMER REGISTRATION</h2>
+    <!-- KANDUNGAN UTAMA LAMAN WEB (DISEMBUNYIKAN SELAGI BELUM MASUK PASSWORD) -->
+    <div id="main_content" class="hidden w-full flex flex-col items-center justify-center relative z-10">
+        <div class="absolute top-4 right-4 z-10">
+            <button onclick="openAdminModal()" class="bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-lg transition backdrop-blur-sm">
+                🔐 Admin Panel
+            </button>
         </div>
 
-        <form id="regForm" onsubmit="handleRegister(event)" class="space-y-6">
-            <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg text-sm text-amber-900 space-y-1 shadow-sm">
-                <p class="font-bold flex items-center gap-1.5"><span>⚠️</span> PERINGATAN PENTING</p>
-                <p>Sila pastikan semua maklumat customer anda diisi dengan tepat dan lengkap.</p>
+        <div class="relative z-10 bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/25 my-6">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-900 tracking-tight">GRAMMAR HUB</h2>
+                 <h2 class="text-xl font-semibold text-blue-600 tracking-wide mt-1">CUSTOMER REGISTRATION</h2>
             </div>
 
-            <div class="space-y-4 pb-2">
-                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Customer</h3>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Nama Customer</label>
-                    <input type="text" id="cust_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Siti Aminah">
+            <form id="regForm" onsubmit="handleRegister(event)" class="space-y-6">
+                <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg text-sm text-amber-900 space-y-1 shadow-sm">
+                    <p class="font-bold flex items-center gap-1.5"><span>⚠️</span> PERINGATAN PENTING</p>
+                    <p>Sila pastikan semua maklumat customer anda diisi dengan tepat dan lengkap.</p>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Email Customer</label>
-                    <input type="email" id="cust_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="customer@email.com">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Customer</label>
-                    <input type="tel" id="cust_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0123456789">
-                </div>
-            </div>
 
-            <div class="space-y-4 pb-2">
-                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Reseller</h3>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Nama Reseller</label>
-                    <input type="text" id="res_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Ahmad Zaki">
+                <div class="space-y-4 pb-2">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Customer</h3>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Nama Customer</label>
+                        <input type="text" id="cust_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Siti Aminah">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Email Customer</label>
+                        <input type="email" id="cust_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="customer@email.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Customer</label>
+                        <input type="tel" id="cust_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0123456789">
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Email Reseller</label>
-                    <input type="email" id="res_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="reseller@email.com">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Reseller</label>
-                    <input type="tel" id="res_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0198765432">
-                </div>
-            </div>
 
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 shadow-md">
-                Register & Teruskan
-            </button>
-        </form>
+                <div class="space-y-4 pb-2">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Reseller</h3>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Nama Reseller</label>
+                        <input type="text" id="res_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Ahmad Zaki">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Email Reseller</label>
+                        <input type="email" id="res_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="reseller@email.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Reseller</label>
+                        <input type="tel" id="res_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0198765432">
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 shadow-md">
+                    Register & Teruskan
+                </button>
+            </form>
+        </div>
     </div>
 
+    <!-- MODAL ADMIN PANEL -->
     <div id="admin_modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200">
-            
             <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
                 <h3 class="font-bold text-lg">Admin Control Panel</h3>
                 <button onclick="closeAdmin()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
             </div>
 
             <div class="p-6">
-                <!-- Bahagian Log Masuk Google -->
                 <div id="login_section" class="space-y-4 max-w-sm mx-auto py-8 text-center">
-                    <h4 class="text-slate-700 font-medium mb-4">Sila log masuk sebagai Admin menggunakan Google</h4>
-                    <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold py-2.5 px-4 rounded-lg shadow-sm transition">
-                        <svg class="w-5 h-5" viewBox="0 0 24 24">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                        </svg>
-                        Log Masuk dengan Google
+                    <h4 class="text-slate-700 font-medium">Masukkan Password Admin</h4>
+                    <input type="password" id="admin_pass" placeholder="••••••" 
+                        class="w-full px-4 py-2 border border-slate-300 rounded-lg text-center tracking-widest focus:ring-2 focus:ring-slate-800 focus:outline-none">
+                    <button onclick="checkAdminLogin()" class="w-full bg-slate-900 hover:bg-black text-white font-semibold py-2 rounded-lg transition">
+                        Log Masuk
                     </button>
                 </div>
 
-                <!-- Dashboard Admin (Selepas Log Masuk) -->
                 <div id="admin_dashboard" class="hidden space-y-4">
-                    <div class="flex justify-between items-center border-b pb-3">
-                        <div class="flex gap-2">
-                            <button id="tab_pending_btn" onclick="switchTab('pending')" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 text-white shadow">
-                                Menunggu Kelulusan (Pending)
-                            </button>
-                            <button id="tab_approved_btn" onclick="switchTab('approved')" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300">
-                                Telah Diluluskan (Approved)
-                            </button>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <span id="admin_user_info" class="text-xs text-slate-500 font-medium"></span>
-                            <button onclick="adminLogout()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-200 transition">
-                                Log Keluar
-                            </button>
-                        </div>
+                    <div class="flex gap-2 border-b pb-3">
+                        <button id="tab_pending_btn" onclick="switchTab('pending')" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 text-white shadow">
+                            Menunggu Kelulusan (Pending)
+                        </button>
+                        <button id="tab_approved_btn" onclick="switchTab('approved')" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300">
+                            Telah Diluluskan (Approved)
+                        </button>
                     </div>
 
                     <div id="section_pending" class="space-y-3">
@@ -432,7 +430,6 @@
                     </div>
                 </div>
             </div>
-
         </div>
     </div>
 
