@@ -21,18 +21,18 @@
 
   <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getDatabase, ref, set, get, child, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // Firebase Config Anda
+        // Firebase Config Anda yang baharu
         const firebaseConfig = {
-            apiKey: "AIzaSyDXc06B8WLtqjkG0aScBHrd3L3M-n_5okc",
-            authDomain: "grammar-hub-6af80.firebaseapp.com",
-            databaseURL: "https://grammar-hub-6af80-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "grammar-hub-6af80",
-            storageBucket: "grammar-hub-6af80.firebasestorage.app",
-            messagingSenderId: "1092171234032",
-            appId: "1:1092171234032:web:7cc8efefb812993500e035"
+            apiKey: "AIzaSyCxxEsifGhdkTj_3EOdjflPS__B_SKRSZY",
+            authDomain: "admin-f72e5.firebaseapp.com",
+            databaseURL: "https://admin-f72e5-default-rtdb.asia-southeast1.firebasedatabase.app", // Dilaraskan untuk Realtime Database
+            projectId: "admin-f72e5",
+            storageBucket: "admin-f72e5.firebasestorage.app",
+            messagingSenderId: "523370880023",
+            appId: "1:523370880023:web:883b422a9611abb2889052"
         };
 
         // Initialize Firebase
@@ -40,8 +40,8 @@
         const auth = getAuth(app);
         const db = getDatabase(app);
 
-        // 1. Handle Pendaftaran & Redirect Auto-Fill ke BCL Page (Mengikut format Grammar Hub)
-        window.handleRegister = function(event) {
+        // 1. Handle Pendaftaran & Simpan Live ke Firebase Realtime Database (Pending)
+        window.handleRegister = async function(event) {
             event.preventDefault();
 
             const submitBtn = event.target.querySelector('button[type="submit"]');
@@ -58,10 +58,10 @@
             const resNofon = document.getElementById('res_nofon').value;
 
             const defaultPassword = "GH548257af";
+            const requestId = 'req_' + Date.now();
 
-            // Simpan dalam senarai pending di localStorage (Customer + Reseller)
             const newRequest = {
-                id: Date.now(),
+                id: requestId,
                 nama: custNama,
                 email: custEmail,
                 nofon: custNofon,
@@ -72,33 +72,50 @@
                 date: new Date().toLocaleString()
             };
 
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
-            pendingList.push(newRequest);
-            localStorage.setItem('pending_users', JSON.stringify(pendingList));
-            
-            // Redirect ke page BCL dengan auto-fill parameter URL mengikut rujukan Grammar Hub (name, email, phone)
-            const baseUrl = "https://bijakbelajar.bcl.my/form/customer-registration";
-            const targetUrl = `${baseUrl}?name=${encodeURIComponent(resNama)}&email=${encodeURIComponent(resEmail)}&phone=${encodeURIComponent(resNofon)}`;
-            
-            window.location.href = targetUrl;
+            try {
+                // Simpan secara live ke Firebase Database bawah node 'pending_users'
+                await set(ref(db, 'pending_users/' + requestId), newRequest);
+                
+                // Redirect ke page BCL dengan auto-fill parameter URL mengikut rujukan Grammar Hub
+                const baseUrl = "https://bijakbelajar.bcl.my/form/customer-registration";
+                const targetUrl = `${baseUrl}?name=${encodeURIComponent(resNama)}&email=${encodeURIComponent(resEmail)}&phone=${encodeURIComponent(resNofon)}`;
+                
+                window.location.href = targetUrl;
+            } catch (error) {
+                console.error("Ralat menyimpan data:", error);
+                alert("Gagal menghantar pendaftaran: " + error.message);
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Register & Teruskan";
+            }
         }
 
-        // 2. Fungsi Admin Login
-        window.checkAdminLogin = function() {
+        // 2. Fungsi Admin Login (Menggunakan Email & Password Firebase Auth)
+        window.checkAdminLogin = async function() {
+            const email = document.getElementById('admin_email').value;
             const pass = document.getElementById('admin_pass').value;
-            if (pass === "019681") {
+
+            if (!email || !pass) {
+                alert("Sila masukkan email dan password admin.");
+                return;
+            }
+
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
                 document.getElementById('login_section').classList.add('hidden');
                 document.getElementById('admin_dashboard').classList.remove('hidden');
-                loadPendingTable();
-                loadApprovedTable();
-            } else {
-                alert("Password Admin Salah!");
+                
+                // Mulakan mendengar data secara live dari Firebase
+                initRealtimeListeners();
+            } catch (error) {
+                console.error("Ralat Log Masuk:", error);
+                alert("Log Masuk Gagal: " + error.message);
             }
         }
 
         window.closeAdmin = function() {
             document.getElementById('admin_modal').classList.add('hidden');
             document.getElementById('admin_pass').value = '';
+            document.getElementById('admin_email').value = '';
         }
 
         window.openAdminModal = function() {
@@ -127,18 +144,32 @@
             }
         }
 
-        // 3. Papar Senarai Pending di Dashboard Admin (Customer + Reseller)
-        function loadPendingTable() {
+        // Realtime Listeners untuk paparan Live Data
+        function initRealtimeListeners() {
+            // Dengar perubahan pada pending_users secara live
+            onValue(ref(db, 'pending_users'), (snapshot) => {
+                const data = snapshot.val();
+                loadPendingTable(data);
+            });
+
+            // Dengar perubahan pada approved_users secara live
+            onValue(ref(db, 'approved_users'), (snapshot) => {
+                const data = snapshot.val();
+                loadApprovedTable(data);
+            });
+        }
+
+        // 3. Papar Senarai Pending secara Live di Dashboard Admin
+        function loadPendingTable(data) {
             const tbody = document.getElementById('pending_table_body');
             tbody.innerHTML = '';
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
 
-            if (pendingList.length === 0) {
+            if (!data || Object.keys(data).length === 0) {
                 tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada senarai menunggu.</td></tr>`;
                 return;
             }
 
-            pendingList.forEach((user, index) => {
+            Object.entries(data).forEach(([key, user]) => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-slate-100";
                 tr.innerHTML = `
@@ -153,8 +184,8 @@
                     <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
                     <td class="py-3 px-4 text-right">
                         <div class="inline-flex items-center space-x-3">
-                            <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
-                            <button onclick="rejectUser(${index})" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Reject</button>
+                            <button onclick="approveUser('${key}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
+                            <button onclick="rejectUser('${key}')" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Reject</button>
                         </div>
                     </td>
                 `;
@@ -162,18 +193,18 @@
             });
         }
 
-        // 4. Papar Senarai Telah Diluluskan (Approved) (Customer + Reseller)
-        function loadApprovedTable() {
+        // 4. Papar Senarai Telah Diluluskan (Approved) secara Live
+        function loadApprovedTable(data) {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
-            let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
 
-            if (approvedList.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
+            if (!data || Object.keys(data).length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
                 return;
             }
 
-            approvedList.forEach((user) => {
+            // Susun mengikut terkini (jika perlu) atau paparkan terus
+            Object.values(data).reverse().forEach((user) => {
                 const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
 
 Terima kasih kerana memilih Grammar Hub! 💙
@@ -237,17 +268,26 @@ Semoga Grammar Hub membantu anda.`;
             });
         }
 
-        // 5. Proses Approve (Firebase + EmailJS + Pindah ke Approved List)
-        window.approveUser = async function(index) {
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
-            const user = pendingList[index];
-
-            if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
-
+        // 5. Proses Approve (Firebase Auth + Realtime DB + EmailJS + Pindah ke Approved List)
+        window.approveUser = async function(key) {
             try {
+                const pendingRef = ref(db, 'pending_users/' + key);
+                const snapshot = await get(pendingRef);
+                
+                if (!snapshot.exists()) {
+                    alert("Data tidak dijumpai.");
+                    return;
+                }
+
+                const user = snapshot.val();
+
+                if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
+
+                // Cipta akaun Authentication untuk customer
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 const firebaseUser = userCredential.user;
 
+                // Simpan profil pengguna dalam database
                 await set(ref(db, 'users/' + firebaseUser.uid), {
                     nama: user.nama,
                     email: user.email,
@@ -258,6 +298,7 @@ Semoga Grammar Hub membantu anda.`;
                     createdAt: new Date().toISOString()
                 });
 
+                // Hantar emel menggunakan EmailJS
                 const templateParams = {
                     to_name: user.nama,
                     to_email: user.email,
@@ -265,16 +306,13 @@ Semoga Grammar Hub membantu anda.`;
                 };
                 await emailjs.send('service_hd5rpgc', 'template_9sh4gw2', templateParams);
 
-                pendingList.splice(index, 1);
-                localStorage.setItem('pending_users', JSON.stringify(pendingList));
+                // Masukkan ke senarai approved dalam Realtime DB
+                await set(ref(db, 'approved_users/' + key), user);
 
-                let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
-                approvedList.unshift(user);
-                localStorage.setItem('approved_users', JSON.stringify(approvedList));
+                // Padam dari senarai pending dalam Realtime DB
+                await remove(pendingRef);
 
                 alert(`Berjaya approve ${user.nama}! Akaun dicipta dan emel telah dihantar.`);
-                loadPendingTable();
-                loadApprovedTable();
 
             } catch (error) {
                 console.error("Ralat:", error);
@@ -282,19 +320,23 @@ Semoga Grammar Hub membantu anda.`;
             }
         }
 
-        // 6. Proses Reject (Padam dari Pending List)
-        window.rejectUser = function(index) {
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
-            const user = pendingList[index];
+        // 6. Proses Reject (Padam dari Pending List secara Live)
+        window.rejectUser = async function(key) {
+            try {
+                const pendingRef = ref(db, 'pending_users/' + key);
+                const snapshot = await get(pendingRef);
 
-            if (!confirm(`Adakah anda pasti untuk REJECT permohonan daripada ${user.nama}?`)) return;
+                if (!snapshot.exists()) return;
+                const user = snapshot.val();
 
-            // Buang data dari senarai pending
-            pendingList.splice(index, 1);
-            localStorage.setItem('pending_users', JSON.stringify(pendingList));
+                if (!confirm(`Adakah anda pasti untuk REJECT permohonan daripada ${user.nama}?`)) return;
 
-            alert(`Permohonan ${user.nama} telah ditolak (rejected).`);
-            loadPendingTable();
+                await remove(pendingRef);
+                alert(`Permohonan ${user.nama} telah ditolak (rejected).`);
+            } catch (error) {
+                console.error("Ralat reject:", error);
+                alert("Gagal menolak permohonan: " + error.message);
+            }
         }
     </script>
 </head>
@@ -391,9 +433,11 @@ Semoga Grammar Hub membantu anda.`;
 
             <div class="p-6">
                 <div id="login_section" class="space-y-4 max-w-sm mx-auto py-8 text-center">
-                    <h4 class="text-slate-700 font-medium">Masukkan Password Admin</h4>
-                    <input type="password" id="admin_pass" placeholder="••••••" 
-                        class="w-full px-4 py-2 border border-slate-300 rounded-lg text-center tracking-widest focus:ring-2 focus:ring-slate-800 focus:outline-none">
+                    <h4 class="text-slate-700 font-medium">Log Masuk Admin</h4>
+                    <input type="email" id="admin_email" placeholder="Email Admin" 
+                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-800 focus:outline-none">
+                    <input type="password" id="admin_pass" placeholder="Password" 
+                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-800 focus:outline-none">
                     <button onclick="checkAdminLogin()" class="w-full bg-slate-900 hover:bg-black text-white font-semibold py-2 rounded-lg transition">
                         Log Masuk
                     </button>
