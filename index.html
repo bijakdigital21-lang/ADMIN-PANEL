@@ -24,23 +24,39 @@
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getDatabase, ref, set, get, child, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // Firebase Config Anda yang baharu
-        const firebaseConfig = {
+        // 1. Firebase Config untuk Paparan Admin & Pending List (admin-f72e5)
+        const adminFirebaseConfig = {
             apiKey: "AIzaSyCxxEsifGhdkTj_3EOdjflPS__B_SKRSZY",
             authDomain: "admin-f72e5.firebaseapp.com",
-            databaseURL: "https://admin-f72e5-default-rtdb.asia-southeast1.firebasedatabase.app", // Dilaraskan untuk Realtime Database
+            databaseURL: "https://admin-f72e5-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "admin-f72e5",
             storageBucket: "admin-f72e5.firebasestorage.app",
             messagingSenderId: "523370880023",
             appId: "1:523370880023:web:883b422a9611abb2889052"
         };
 
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getDatabase(app);
+        // 2. Firebase Config untuk Target User / Grammar Hub (grammar-hub-6af80)
+        const targetFirebaseConfig = {
+            apiKey: "AIzaSyDXc06B8WLtqjkG0aScBHrd3L3M-n_5okc",
+            authDomain: "grammar-hub-6af80.firebaseapp.com",
+            databaseURL: "https://grammar-hub-6af80-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "grammar-hub-6af80",
+            storageBucket: "grammar-hub-6af80.firebasestorage.app",
+            messagingSenderId: "1092171234032",
+            appId: "1:1092171234032:web:7cc8efefb812993500e035"
+        };
 
-        // 1. Handle Pendaftaran & Simpan Live ke Firebase Realtime Database (Pending)
+        // Initialize Admin Firebase App (Primary)
+        const adminApp = initializeApp(adminFirebaseConfig, "AdminApp");
+        const adminAuth = getAuth(adminApp);
+        const adminDb = getDatabase(adminApp);
+
+        // Initialize Target Grammar Hub Firebase App (Secondary)
+        const targetApp = initializeApp(targetFirebaseConfig, "TargetApp");
+        const targetAuth = getAuth(targetApp);
+        const targetDb = getDatabase(targetApp);
+
+        // 1. Handle Pendaftaran & Simpan Live ke Firebase Realtime Database Admin (Pending)
         window.handleRegister = async function(event) {
             event.preventDefault();
 
@@ -52,7 +68,6 @@
             const custEmail = document.getElementById('cust_email').value;
             const custNofon = document.getElementById('cust_nofon').value;
             
-            // Maklumat Reseller
             const resNama = document.getElementById('res_nama').value;
             const resEmail = document.getElementById('res_email').value;
             const resNofon = document.getElementById('res_nofon').value;
@@ -73,10 +88,9 @@
             };
 
             try {
-                // Simpan secara live ke Firebase Database bawah node 'pending_users'
-                await set(ref(db, 'pending_users/' + requestId), newRequest);
+                // Simpan ke admin database di bawah node 'pending_users'
+                await set(ref(adminDb, 'pending_users/' + requestId), newRequest);
                 
-                // Redirect ke page BCL dengan auto-fill parameter URL mengikut rujukan Grammar Hub
                 const baseUrl = "https://bijakbelajar.bcl.my/form/customer-registration";
                 const targetUrl = `${baseUrl}?name=${encodeURIComponent(resNama)}&email=${encodeURIComponent(resEmail)}&phone=${encodeURIComponent(resNofon)}`;
                 
@@ -89,7 +103,7 @@
             }
         }
 
-        // 2. Fungsi Admin Login (Menggunakan Email & Password Firebase Auth)
+        // 2. Fungsi Admin Login (Menggunakan Admin Auth)
         window.checkAdminLogin = async function() {
             const email = document.getElementById('admin_email').value;
             const pass = document.getElementById('admin_pass').value;
@@ -100,11 +114,10 @@
             }
 
             try {
-                await signInWithEmailAndPassword(auth, email, pass);
+                await signInWithEmailAndPassword(adminAuth, email, pass);
                 document.getElementById('login_section').classList.add('hidden');
                 document.getElementById('admin_dashboard').classList.remove('hidden');
                 
-                // Mulakan mendengar data secara live dari Firebase
                 initRealtimeListeners();
             } catch (error) {
                 console.error("Ralat Log Masuk:", error);
@@ -124,7 +137,6 @@
             document.getElementById('admin_dashboard').classList.add('hidden');
         }
 
-        // Tukar Tab Admin (Pending vs Approved)
         window.switchTab = function(tabName) {
             const pendingSec = document.getElementById('section_pending');
             const approvedSec = document.getElementById('section_approved');
@@ -144,22 +156,18 @@
             }
         }
 
-        // Realtime Listeners untuk paparan Live Data
         function initRealtimeListeners() {
-            // Dengar perubahan pada pending_users secara live
-            onValue(ref(db, 'pending_users'), (snapshot) => {
+            onValue(ref(adminDb, 'pending_users'), (snapshot) => {
                 const data = snapshot.val();
                 loadPendingTable(data);
             });
 
-            // Dengar perubahan pada approved_users secara live
-            onValue(ref(db, 'approved_users'), (snapshot) => {
+            onValue(ref(adminDb, 'approved_users'), (snapshot) => {
                 const data = snapshot.val();
                 loadApprovedTable(data);
             });
         }
 
-        // 3. Papar Senarai Pending secara Live di Dashboard Admin (Dengan paparan lengkap customer & reseller)
         function loadPendingTable(data) {
             const tbody = document.getElementById('pending_table_body');
             tbody.innerHTML = '';
@@ -193,7 +201,6 @@
             });
         }
 
-        // 4. Papar Senarai Telah Diluluskan (Approved) secara Live
         function loadApprovedTable(data) {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
@@ -267,10 +274,10 @@ Semoga Grammar Hub membantu anda.`;
             });
         }
 
-        // 5. Proses Approve (Firebase Auth + Realtime DB + EmailJS + Pindah ke Approved List)
+        // 5. Proses Approve: Cipta Akaun Automatik dalam Target Firebase (grammar-hub-6af80)
         window.approveUser = async function(key) {
             try {
-                const pendingRef = ref(db, 'pending_users/' + key);
+                const pendingRef = ref(adminDb, 'pending_users/' + key);
                 const snapshot = await get(pendingRef);
                 
                 if (!snapshot.exists()) {
@@ -282,10 +289,12 @@ Semoga Grammar Hub membantu anda.`;
 
                 if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
-                const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
+                // 1. Cipta akaun pengguna di dalam Firebase Auth PROJECT KEDUA (grammar-hub-6af80)[cite: 1]
+                const userCredential = await createUserWithEmailAndPassword(targetAuth, user.email, user.password);
                 const firebaseUser = userCredential.user;
 
-                await set(ref(db, 'users/' + firebaseUser.uid), {
+                // 2. Simpan maklumat profil ke Database PROJECT KEDUA (grammar-hub-6af80)[cite: 1]
+                await set(ref(targetDb, 'users/' + firebaseUser.uid), {
                     nama: user.nama,
                     email: user.email,
                     nofon: user.nofon,
@@ -295,6 +304,7 @@ Semoga Grammar Hub membantu anda.`;
                     createdAt: new Date().toISOString()
                 });
 
+                // 3. Hantar emel menggunakan EmailJS
                 const templateParams = {
                     to_name: user.nama,
                     to_email: user.email,
@@ -302,10 +312,11 @@ Semoga Grammar Hub membantu anda.`;
                 };
                 await emailjs.send('service_hd5rpgc', 'template_9sh4gw2', templateParams);
 
-                await set(ref(db, 'approved_users/' + key), user);
+                // 4. Pindah data dari pending ke approved di database ADMIN (admin-f72e5)
+                await set(ref(adminDb, 'approved_users/' + key), user);
                 await remove(pendingRef);
 
-                alert(`Berjaya approve ${user.nama}! Akaun dicipta dan emel telah dihantar.`);
+                alert(`Berjaya approve ${user.nama}! Akaun telah dicipta dalam Grammar Hub & emel telah dihantar.`);
 
             } catch (error) {
                 console.error("Ralat:", error);
@@ -313,10 +324,10 @@ Semoga Grammar Hub membantu anda.`;
             }
         }
 
-        // 6. Proses Reject (Padam dari Pending List secara Live)
+        // 6. Proses Reject (Padam dari Pending List Admin)
         window.rejectUser = async function(key) {
             try {
-                const pendingRef = ref(db, 'pending_users/' + key);
+                const pendingRef = ref(adminDb, 'pending_users/' + key);
                 const snapshot = await get(pendingRef);
 
                 if (!snapshot.exists()) return;
