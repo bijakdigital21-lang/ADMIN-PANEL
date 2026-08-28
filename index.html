@@ -151,8 +151,9 @@
                         <span class="text-xs text-slate-400">${user.reseller_email || ''}</span>
                     </td>
                     <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
-                    <td class="py-3 px-4 text-right">
+                    <td class="py-3 px-4 text-right space-x-1">
                         <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
+                        <button onclick="rejectUser(${index})" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Reject</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -277,6 +278,21 @@ Semoga Grammar Hub membantu anda.`;
                 console.error("Ralat:", error);
                 alert("Gagal memproses kelulusan: " + error.message);
             }
+        }
+
+        // 6. Proses Reject (Padam dari Pending List)
+        window.rejectUser = function(index) {
+            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
+            const user = pendingList[index];
+
+            if (!confirm(`Adakah anda pasti untuk REJECT permohonan daripada ${user.nama}?`)) return;
+
+            // Buang data dari senarai pending
+            pendingList.splice(index, 1);
+            localStorage.setItem('pending_users', JSON.stringify(pendingList));
+
+            alert(`Permohonan ${user.nama} telah ditolak (rejected).`);
+            loadPendingTable();
         }
     </script>
 </head>
