@@ -40,28 +40,7 @@
         const auth = getAuth(app);
         const db = getDatabase(app);
 
-        // 1. Fungsi Security Gate (Password Seluruh Paparan: 019681)
-        window.checkSitePassword = function() {
-            const pass = document.getElementById('site_pass').value;
-            const errorMsg = document.getElementById('site_pass_error');
-            
-            if (pass === "019681") {
-                document.getElementById('site_lock_screen').classList.add('hidden');
-                document.getElementById('main_content').classList.remove('hidden');
-            } else {
-                errorMsg.classList.remove('hidden');
-                document.getElementById('site_pass').value = '';
-            }
-        }
-
-        // Membolehkan tekan 'Enter' untuk login
-        window.handleSitePassKey = function(event) {
-            if (event.key === 'Enter') {
-                checkSitePassword();
-            }
-        }
-
-        // 2. Handle Pendaftaran & Redirect Auto-Fill ke BCL Page
+        // 1. Handle Pendaftaran & Redirect Auto-Fill ke BCL Page (Mengikut format Grammar Hub)
         window.handleRegister = function(event) {
             event.preventDefault();
 
@@ -73,12 +52,14 @@
             const custEmail = document.getElementById('cust_email').value;
             const custNofon = document.getElementById('cust_nofon').value;
             
+            // Maklumat Reseller
             const resNama = document.getElementById('res_nama').value;
             const resEmail = document.getElementById('res_email').value;
             const resNofon = document.getElementById('res_nofon').value;
 
             const defaultPassword = "GH548257af";
 
+            // Simpan dalam senarai pending di localStorage (Customer + Reseller)
             const newRequest = {
                 id: Date.now(),
                 nama: custNama,
@@ -95,13 +76,14 @@
             pendingList.push(newRequest);
             localStorage.setItem('pending_users', JSON.stringify(pendingList));
             
+            // Redirect ke page BCL dengan auto-fill parameter URL mengikut rujukan Grammar Hub (name, email, phone)
             const baseUrl = "https://bijakbelajar.bcl.my/form/customer-registration";
             const targetUrl = `${baseUrl}?name=${encodeURIComponent(resNama)}&email=${encodeURIComponent(resEmail)}&phone=${encodeURIComponent(resNofon)}`;
             
             window.location.href = targetUrl;
         }
 
-        // 3. Fungsi Admin Login (Dalam Modal)
+        // 2. Fungsi Admin Login
         window.checkAdminLogin = function() {
             const pass = document.getElementById('admin_pass').value;
             if (pass === "019681") {
@@ -145,7 +127,7 @@
             }
         }
 
-        // 4. Papar Senarai Pending di Dashboard Admin
+        // 3. Papar Senarai Pending di Dashboard Admin (Customer + Reseller)
         function loadPendingTable() {
             const tbody = document.getElementById('pending_table_body');
             tbody.innerHTML = '';
@@ -180,19 +162,52 @@
             });
         }
 
-        // 5. Papar Senarai Telah Diluluskan (Approved)
+        // 4. Papar Senarai Telah Diluluskan (Approved) (Customer + Reseller)
         function loadApprovedTable() {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
             let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
 
             if (approvedList.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
                 return;
             }
 
             approvedList.forEach((user) => {
-                const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!\n\nTerima kasih kerana memilih Grammar Hub! 💙\n\nKami sangat teruja untuk anda mula belajar, berlatih dan meneroka pelbagai bahan pembelajaran yang telah disediakan.\n\n📚 AKSES GRAMMAR HUB ANDA\nhttps://bijakdigital21-lang.github.io/Grammarhub./\n\n🔐 MAKLUMAT LOG MASUK\nEmail: ${user.email}\nPassword: ${user.password}\n\n📌 Sila tukar password anda di laman profile selepas berjaya log masuk.`;
+                const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
+
+Terima kasih kerana memilih Grammar Hub! 💙
+
+Kami sangat teruja untuk anda mula belajar, berlatih dan meneroka pelbagai bahan pembelajaran yang telah disediakan untuk membantu meningkatkan penguasaan English Grammar dengan lebih mudah dan menyeronokkan.
+
+📚 AKSES GRAMMAR HUB ANDA
+
+Klik pautan di bawah untuk mula menggunakan Grammar Hub:
+
+👇🏻👇🏻
+https://bijakdigital21-lang.github.io/Grammarhub./
+
+🔐 MAKLUMAT LOG MASUK
+
+Email: ${user.email}
+Password: ${user.password}
+
+📌 Sila tukar password anda di laman profile selepas berjaya log masuk ke aplikasi ini.
+
+⚠️ PENTING
+
+📌 Simpan pautan Grammar Hub ini untuk rujukan dan akses anda pada masa akan datang.
+
+Sertai group reseller kami untuk info dan sokongan berterusan.
+👇🏻👇🏻👇🏻
+https://t.me/+Z-uxVSN8A54zNTdl
+
+📱 Sekiranya anda mengalami sebarang masalah untuk membuka atau mengakses Grammar Hub, jangan risau.
+
+Hubungi kami melalui WhatsApp dan kami sedia membantu.
+
+💙 Selamat belajar!
+Semoga Grammar Hub membantu anda.`;
 
                 let cleanPhone = user.nofon.replace(/\D/g,'');
                 if(cleanPhone.startsWith('0')) {
@@ -212,7 +227,7 @@
                         <span class="font-medium text-blue-600">${user.reseller_nama || '-'}</span>
                     </td>
                     <td class="py-3 px-4">
-                        <a href="${waLink}" target="_blank" class="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-emerald-200 transition">
+                        <a href="${waLink}" target="_blank" class="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-emerald-200 transition" title="Klik untuk hantar WhatsApp">
                             📱 ${user.nofon} ↗
                         </a>
                     </td>
@@ -222,7 +237,7 @@
             });
         }
 
-        // 6. Proses Approve
+        // 5. Proses Approve (Firebase + EmailJS + Pindah ke Approved List)
         window.approveUser = async function(index) {
             let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
             const user = pendingList[index];
@@ -257,7 +272,7 @@
                 approvedList.unshift(user);
                 localStorage.setItem('approved_users', JSON.stringify(approvedList));
 
-                alert(`Berjaya approve ${user.nama}!`);
+                alert(`Berjaya approve ${user.nama}! Akaun dicipta dan emel telah dihantar.`);
                 loadPendingTable();
                 loadApprovedTable();
 
@@ -267,17 +282,18 @@
             }
         }
 
-        // 7. Proses Reject
+        // 6. Proses Reject (Padam dari Pending List)
         window.rejectUser = function(index) {
             let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
             const user = pendingList[index];
 
             if (!confirm(`Adakah anda pasti untuk REJECT permohonan daripada ${user.nama}?`)) return;
 
+            // Buang data dari senarai pending
             pendingList.splice(index, 1);
             localStorage.setItem('pending_users', JSON.stringify(pendingList));
 
-            alert(`Permohonan ${user.nama} telah ditolak.`);
+            alert(`Permohonan ${user.nama} telah ditolak (rejected).`);
             loadPendingTable();
         }
     </script>
@@ -286,90 +302,88 @@
 
     <div class="absolute inset-0 bg-black/40 z-0"></div>
 
-    <!-- SKRIN KUNCI UTAMA (PASSWORD SEMUA PAPARAN) -->
-    <div id="site_lock_screen" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center space-y-6 border border-slate-200">
-            <div class="space-y-2">
-                <div class="text-4xl mb-2">🔒</div>
-                <h3 class="text-xl font-bold text-slate-900">Akses Terhad</h3>
-                <p class="text-sm text-slate-500">Sila masukkan kata laluan untuk membuka sistem pendaftaran.</p>
-            </div>
+    <div class="absolute top-4 right-4 z-10">
+        <button onclick="openAdminModal()" class="bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-lg transition backdrop-blur-sm">
+            🔐 Admin Panel
+        </button>
+    </div>
+
+    <div class="relative z-10 bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/25 my-6">
+        <div class="text-center mb-6">
+            <h2 class="text-2xl font-bold text-slate-900 tracking-tight">GRAMMAR HUB</h2>
+             <h2 class="text-xl font-semibold text-blue-600 tracking-wide mt-1">CUSTOMER REGISTRATION</h2>
+        </div>
+
+        <form id="regForm" onsubmit="handleRegister(event)" class="space-y-6">
             
-            <div class="space-y-3">
-                <input type="password" id="site_pass" placeholder="Masukkan Password" onkeypress="handleSitePassKey(event)"
-                    class="w-full px-4 py-3 border border-slate-300 rounded-xl text-center tracking-widest text-lg focus:ring-2 focus:ring-blue-600 focus:outline-none">
-                
-                <p id="site_pass_error" class="text-xs text-rose-600 hidden font-medium">Kata laluan salah! Sila cuba lagi.</p>
-                
-                <button onclick="checkSitePassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition shadow-lg">
-                    Buka Sistem
-                </button>
+            <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg text-sm text-amber-900 space-y-1 shadow-sm">
+                <p class="font-bold flex items-center gap-1.5">
+                    <span>⚠️</span> PERINGATAN PENTING
+                </p>
+                <p>Sila pastikan semua maklumat customer anda diisi dengan tepat dan lengkap.</p>
+                <p>Pastikan alamat email yang didaftarkan adalah betul dan aktif.</p>
             </div>
-        </div>
-    </div>
 
-    <!-- KANDUNGAN UTAMA LAMAN WEB (DISEMBUNYIKAN SELAGI BELUM MASUK PASSWORD) -->
-    <div id="main_content" class="hidden w-full flex flex-col items-center justify-center relative z-10">
-        <div class="absolute top-4 right-4 z-10">
-            <button onclick="openAdminModal()" class="bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-lg transition backdrop-blur-sm">
-                🔐 Admin Panel
+            <div class="space-y-4 pb-2">
+                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Customer</h3>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Nama Customer</label>
+                    <input type="text" id="cust_nama" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="Contoh: Siti Aminah">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Email Customer</label>
+                    <input type="email" id="cust_email" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="customer@email.com">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Customer</label>
+                    <input type="tel" id="cust_nofon" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="0123456789">
+                </div>
+            </div>
+
+            <div class="space-y-4 pb-2">
+                <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Reseller</h3>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Nama Reseller</label>
+                    <input type="text" id="res_nama" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="Contoh: Ahmad Zaki">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Email Reseller</label>
+                    <input type="email" id="res_email" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="reseller@email.com">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Reseller</label>
+                    <input type="tel" id="res_nofon" required 
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 font-medium"
+                        placeholder="0198765432">
+                </div>
+            </div>
+
+            <button type="submit" 
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 shadow-md">
+                Register & Teruskan
             </button>
-        </div>
-
-        <div class="relative z-10 bg-white/95 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/25 my-6">
-            <div class="text-center mb-6">
-                <h2 class="text-2xl font-bold text-slate-900 tracking-tight">GRAMMAR HUB</h2>
-                 <h2 class="text-xl font-semibold text-blue-600 tracking-wide mt-1">CUSTOMER REGISTRATION</h2>
-            </div>
-
-            <form id="regForm" onsubmit="handleRegister(event)" class="space-y-6">
-                <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg text-sm text-amber-900 space-y-1 shadow-sm">
-                    <p class="font-bold flex items-center gap-1.5"><span>⚠️</span> PERINGATAN PENTING</p>
-                    <p>Sila pastikan semua maklumat customer anda diisi dengan tepat dan lengkap.</p>
-                </div>
-
-                <div class="space-y-4 pb-2">
-                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Customer</h3>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Nama Customer</label>
-                        <input type="text" id="cust_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Siti Aminah">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Email Customer</label>
-                        <input type="email" id="cust_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="customer@email.com">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Customer</label>
-                        <input type="tel" id="cust_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0123456789">
-                    </div>
-                </div>
-
-                <div class="space-y-4 pb-2">
-                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1">Maklumat Reseller</h3>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Nama Reseller</label>
-                        <input type="text" id="res_nama" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="Contoh: Ahmad Zaki">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">Email Reseller</label>
-                        <input type="email" id="res_email" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="reseller@email.com">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">No. Telefon Reseller</label>
-                        <input type="tel" id="res_nofon" required class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium" placeholder="0198765432">
-                    </div>
-                </div>
-
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 shadow-md">
-                    Register & Teruskan
-                </button>
-            </form>
-        </div>
+        </form>
     </div>
 
-    <!-- MODAL ADMIN PANEL -->
     <div id="admin_modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200">
+            
             <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
                 <h3 class="font-bold text-lg">Admin Control Panel</h3>
                 <button onclick="closeAdmin()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
@@ -407,7 +421,8 @@
                                         <th class="py-2.5 px-4 text-right">Tindakan</th>
                                     </tr>
                                 </thead>
-                                <tbody id="pending_table_body"></tbody>
+                                <tbody id="pending_table_body">
+                                    </tbody>
                             </table>
                         </div>
                     </div>
@@ -424,12 +439,14 @@
                                         <th class="py-2.5 px-4">Tarikh</th>
                                     </tr>
                                 </thead>
-                                <tbody id="approved_table_body"></tbody>
+                                <tbody id="approved_table_body">
+                                    </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
             </div>
+
         </div>
     </div>
 
