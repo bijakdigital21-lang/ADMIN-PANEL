@@ -22,9 +22,9 @@
   <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, remove, onValue, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        // Firebase Config Anda
+        // Firebase Config Anda[cite: 1]
         const firebaseConfig = {
             apiKey: "AIzaSyDXc06B8WLtqjkG0aScBHrd3L3M-n_5okc",
             authDomain: "grammar-hub-6af80.firebaseapp.com",
@@ -40,17 +40,14 @@
         const auth = getAuth(app);
         const db = getDatabase(app);
 
-        // Auto muat data apabila halaman dibuka
+        // Auto muat data secara live apabila halaman dibuka
         window.addEventListener('DOMContentLoaded', () => {
-            loadPendingTable();
-            loadApprovedTable();
+            initLiveListeners();
         });
 
-        // Fungsi Refresh Manual
+        // Fungsi Refresh Manual (Kini hanya paparkan status kerana data sudah live)
         window.refreshData = function() {
-            loadPendingTable();
-            loadApprovedTable();
-            alert("Data berjaya dikemaskini!");
+            alert("Data sentiasa dikemaskini secara live!");
         }
 
         // Tukar Tab Admin (Pending vs Approved)
@@ -73,18 +70,35 @@
             }
         }
 
-        // 3. Papar Senarai Pending di Dashboard Admin (Customer + Reseller)
-        function loadPendingTable() {
+        // Fungsi Live Listeners Firebase Realtime Database
+        function initLiveListeners() {
+            // Listener untuk Pending Users
+            const pendingRef = ref(db, 'pending_users');
+            onValue(pendingRef, (snapshot) => {
+                const data = snapshot.val();
+                loadPendingTable(data);
+            });
+
+            // Listener untuk Approved Users
+            const approvedRef = ref(db, 'approved_users');
+            onValue(approvedRef, (snapshot) => {
+                const data = snapshot.val();
+                loadApprovedTable(data);
+            });
+        }
+
+        // 3. Papar Senarai Pending di Dashboard Admin secara Live
+        function loadPendingTable(data) {
             const tbody = document.getElementById('pending_table_body');
             tbody.innerHTML = '';
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
 
-            if (pendingList.length === 0) {
+            if (!data) {
                 tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada senarai menunggu.</td></tr>`;
                 return;
             }
 
-            pendingList.forEach((user, index) => {
+            Object.keys(data).forEach((key) => {
+                const user = data[key];
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-slate-100";
                 tr.innerHTML = `
@@ -98,25 +112,25 @@
                     </td>
                     <td class="py-3 px-4 text-xs text-slate-500">${user.date}</td>
                     <td class="py-3 px-4 text-right">
-                        <button onclick="approveUser(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
+                        <button onclick="approveUser('${key}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg shadow">Approve</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
-        // 4. Papar Senarai Telah Diluluskan (Approved) (Customer + Reseller)
-        function loadApprovedTable() {
+        // 4. Papar Senarai Telah Diluluskan (Approved) secara Live
+        function loadApprovedTable(data) {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
-            let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
 
-            if (approvedList.length === 0) {
+            if (!data) {
                 tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-500">Tiada rekod yang telah diluluskan.</td></tr>`;
                 return;
             }
 
-            approvedList.forEach((user) => {
+            Object.keys(data).reverse().forEach((key) => {
+                const user = data[key];
                 const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
 
 Terima kasih kerana memilih Grammar Hub! 💙
@@ -152,7 +166,7 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
 💙 Selamat belajar!
 Semoga Grammar Hub membantu anda.`;
 
-                let cleanPhone = user.nofon.replace(/\D/g,'');
+                let cleanPhone = user.nofon ? user.nofon.replace(/\D/g,'') : '';
                 if(cleanPhone.startsWith('0')) {
                     cleanPhone = '6' + cleanPhone;
                 }
@@ -180,27 +194,38 @@ Semoga Grammar Hub membantu anda.`;
             });
         }
 
-        // 5. Proses Approve (Firebase + EmailJS + Pindah ke Approved List)
-        window.approveUser = async function(index) {
-            let pendingList = JSON.parse(localStorage.getItem('pending_users') || '[]');
-            const user = pendingList[index];
-
-            if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
-
+        // 5. Proses Approve (Firebase Auth + Realtime DB + EmailJS + Pindah Node)
+        window.approveUser = async function(firebaseKey) {
             try {
+                // Ambil data user spesifik dari Firebase berdasarkan key uniknya
+                const userRef = ref(db, 'pending_users/' + firebaseKey);
+                const snapshot = await get(userRef);
+                
+                if (!snapshot.exists()) {
+                    alert("Data pengguna tidak dijumpai!");
+                    return;
+                }
+
+                const user = snapshot.val();
+
+                if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
+
+                // 1. Cipta akaun dalam Firebase Authentication
                 const userCredential = await createUserWithEmailAndPassword(auth, user.email, user.password);
                 const firebaseUser = userCredential.user;
 
+                // 2. Simpan profil lengkap ke dalam nod 'users'
                 await set(ref(db, 'users/' + firebaseUser.uid), {
                     nama: user.nama,
                     email: user.email,
                     nofon: user.nofon,
-                    reseller_nama: user.reseller_nama,
-                    reseller_email: user.reseller_email,
-                    reseller_nofon: user.reseller_nofon,
+                    reseller_nama: user.reseller_nama || '',
+                    reseller_email: user.reseller_email || '',
+                    reseller_nofon: user.reseller_nofon || '',
                     createdAt: new Date().toISOString()
                 });
 
+                // 3. Hantar emel menggunakan EmailJS
                 const templateParams = {
                     to_name: user.nama,
                     to_email: user.email,
@@ -208,16 +233,13 @@ Semoga Grammar Hub membantu anda.`;
                 };
                 await emailjs.send('service_hd5rpgc', 'template_9sh4gw2', templateParams);
 
-                pendingList.splice(index, 1);
-                localStorage.setItem('pending_users', JSON.stringify(pendingList));
+                // 4. Masukkan ke dalam nod 'approved_users' di Firebase
+                await set(push(ref(db, 'approved_users')), user);
 
-                let approvedList = JSON.parse(localStorage.getItem('approved_users') || '[]');
-                approvedList.unshift(user);
-                localStorage.setItem('approved_users', JSON.stringify(approvedList));
+                // 5. Padam dari nod 'pending_users' di Firebase
+                await remove(userRef);
 
                 alert(`Berjaya approve ${user.nama}! Akaun dicipta dan emel telah dihantar.`);
-                loadPendingTable();
-                loadApprovedTable();
 
             } catch (error) {
                 console.error("Ralat:", error);
@@ -233,14 +255,11 @@ Semoga Grammar Hub membantu anda.`;
         <div class="bg-slate-900 text-white px-8 py-5 flex justify-between items-center">
             <div>
                 <h3 class="font-bold text-xl tracking-tight">GRAMMAR HUB</h3>
-                <p class="text-xs text-slate-400 mt-0.5">Admin Control Panel (Auto-Login)</p>
+                <p class="text-xs text-slate-400 mt-0.5">Admin Control Panel (Live Realtime)</p>
             </div>
             <div class="flex items-center gap-3">
-                <button onclick="refreshData()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow transition flex items-center gap-1">
-                    🔄 Refresh Data
-                </button>
-                <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold px-3 py-1 rounded-full">
-                    ● Sesi Admin Aktif
+                <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold px-3 py-1 rounded-full animate-pulse">
+                    ● Live Connected
                 </span>
             </div>
         </div>
@@ -269,7 +288,8 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="pending_table_body">
-                                </tbody>
+                                <!-- Data akan masuk secara live di sini -->
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -287,7 +307,8 @@ Semoga Grammar Hub membantu anda.`;
                                 </tr>
                             </thead>
                             <tbody id="approved_table_body">
-                                </tbody>
+                                <!-- Data akan masuk secara live di sini -->
+                            </tbody>
                         </table>
                     </div>
                 </div>
