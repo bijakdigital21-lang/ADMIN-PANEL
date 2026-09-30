@@ -38,6 +38,8 @@
         import {
             getDatabase,
             ref,
+            set,
+            remove,
             get,
             onValue,
             update,
@@ -111,6 +113,7 @@
 
         // REKOD REJECT DISIMPAN DALAM PELAYAR
         let pendingRecords = {};
+        let approvedRecords = {};
         let rejectedRecords = {};
 
         function rejectStorageKey() {
@@ -158,6 +161,7 @@
 
         function refreshRejectView() {
             loadPendingTable(pendingRecords);
+            loadApprovedTable(approvedRecords);
             loadRejectedTable(rejectedRecords);
         }
 
@@ -190,7 +194,12 @@
             });
 
             onValue(ref(adminDb, 'approved_users'), (snapshot) => {
-                loadApprovedTable(snapshot.val());
+                approvedRecords = snapshot.val() || {};
+                loadApprovedTable(approvedRecords);
+                loadPendingTable(pendingRecords);
+            }, (error) => {
+                document.getElementById('approved_notice').textContent =
+                    'Tidak dapat membaca Approved daripada Firebase: ' + error.message;
             });
         }
 
@@ -344,7 +353,8 @@
             // Rekod yang telah disimpan dalam Rejected
             // disembunyikan daripada Pending pada pelayar ini.
             const visible = Object.entries(data || {}).filter(([key]) =>
-                !Object.prototype.hasOwnProperty.call(rejectedRecords, key)
+                !Object.prototype.hasOwnProperty.call(rejectedRecords, key) &&
+                !Object.prototype.hasOwnProperty.call(approvedRecords, key)
             );
 
             if (visible.length === 0) {
@@ -410,24 +420,81 @@
             });
         }
 
+        function parseTransactionTime(value) {
+            if (typeof value === 'number') return value < 1e12 ? value * 1000 : value;
+            if (!value) return NaN;
+            const text = String(value).trim();
+            // Tarikh borang Malaysia: DD/MM/YYYY, dengan masa pilihan.
+            const match = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[,\s]+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?\s*(AM|PM)?)?$/i);
+            if (match) {
+                let hour = Number(match[4] || 0);
+                if (match[7]) hour = hour % 12 + (/pm/i.test(match[7]) ? 12 : 0);
+                return Date.parse(`${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}T${String(hour).padStart(2, '0')}:${match[5] || '00'}:${match[6] || '00'}+08:00`);
+            }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return Date.parse(text + 'T00:00:00+08:00');
+            if (/^\d+$/.test(text)) return parseTransactionTime(Number(text));
+            return Date.parse(text);
+        }
+
+        function transactionTime(user, key) {
+            for (const value of [user.createdAt, user.created_at, user.timestamp, user.date]) {
+                const time = parseTransactionTime(value);
+                if (Number.isFinite(time)) return time;
+            }
+            // Timestamp terbina dalam ID push Firebase.
+            const alphabet = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+            if (/^[-0-9A-Z_a-z]{20}$/.test(key)) {
+                let time = 0;
+                for (const char of key.slice(0, 8)) time = time * 64 + alphabet.indexOf(char);
+                return time;
+            }
+            return parseTransactionTime(user.approvedAt) || 0;
+        }
+
+        function malaysiaDate(time) {
+            if (!Number.isFinite(time) || !time) return '';
+            const parts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).formatToParts(new Date(time));
+            const part = type => parts.find(item => item.type === type).value;
+            return `${part('year')}-${part('month')}-${part('day')}`;
+        }
+
+        window.filterApproved = function () { loadApprovedTable(approvedRecords); };
+        window.resetApprovedFilters = function () {
+            document.getElementById('approved_date_filter').value = '';
+            document.getElementById('approved_email_search').value = '';
+            window.filterApproved();
+        };
+
         // JADUAL APPROVED
         function loadApprovedTable(data) {
             const tbody = document.getElementById('approved_table_body');
             tbody.innerHTML = '';
 
-            if (!data || Object.keys(data).length === 0) {
+            const dateFilter = document.getElementById('approved_date_filter').value;
+            const emailSearch = document.getElementById('approved_email_search').value.trim().toLowerCase();
+            const entries = Object.entries(data || {}).map(([key, user]) => ({
+                key, user, time: transactionTime(user, key)
+            })).filter(({user, time}) =>
+                (!dateFilter || malaysiaDate(time) === dateFilter) &&
+                (!emailSearch || String(user.email || '').toLowerCase().includes(emailSearch))
+            ).sort((a, b) => b.time - a.time || String(b.user.approvedAt || '').localeCompare(String(a.user.approvedAt || '')) || b.key.localeCompare(a.key));
+            document.getElementById('approved_result_count').textContent = `${entries.length} daripada ${Object.keys(data || {}).length} transaksi`;
+
+            if (!entries.length) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="4"
                             class="text-center py-4 text-slate-500">
-                            Tiada rekod yang telah diluluskan.
+                            Tiada transaksi yang sepadan.
                         </td>
                     </tr>
                 `;
                 return;
             }
 
-            Object.values(data).reverse().forEach((user) => {
+            entries.forEach(({user, time}) => {
                 const rawMsg = `🎉 TERIMA KASIH ATAS PEMBELIAN ANDA!
 
 Terima kasih kerana memilih Grammar Hub + KIDDORA ! 💙
@@ -463,7 +530,7 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
 
 💙 Selamat belajar!`;
 
-                let cleanPhone = user.nofon.replace(/\D/g, '');
+                let cleanPhone = String(user.nofon || '').replace(/\D/g, '');
 
                 if (cleanPhone.startsWith('0')) {
                     cleanPhone = '6' + cleanPhone;
@@ -480,8 +547,12 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                         ${user.nama}
                         <br>
                         <span class="text-xs text-slate-400">
-                            ${user.email}
+                            ${escapeHtml(user.email)}
                         </span>
+                        <details class="mt-2 text-xs font-normal">
+                            <summary class="cursor-pointer text-blue-600">Lihat semua maklumat</summary>
+                            <pre class="mt-2 whitespace-pre-wrap break-all bg-slate-50 p-2 rounded">${escapeHtml(JSON.stringify(user, null, 2))}</pre>
+                        </details>
                     </td>
 
                     <td class="py-3 px-4">
@@ -501,7 +572,7 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                     </td>
 
                     <td class="py-3 px-4 text-xs text-slate-500">
-                        ${user.date}
+                        ${escapeHtml(user.date || (time ? new Date(time).toLocaleString('ms-MY', {timeZone: 'Asia/Kuala_Lumpur'}) : '-'))}
                     </td>
                 `;
 
@@ -654,16 +725,22 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                 const user = snapshot.val();
                 if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
-                stage = 'memindahkan rekod Pending ke Approved';
-                // Satu kemas kini atomik: kedua-dua perubahan berjaya atau tiada
-                // perubahan disimpan. Semua maklumat asal dikekalkan.
-                await update(ref(adminDb), {
-                    ['approved_users/' + key]: {
-                        ...user,
-                        approvedAt: new Date().toISOString()
-                    },
-                    ['pending_users/' + key]: null
-                });
+                stage = 'menyimpan rekod Approved';
+                const approvedData = {...user, approvedAt: new Date().toISOString()};
+                // Tidak bergantung pada izin memadam Pending untuk menyimpan Approved.
+                await set(ref(adminDb, 'approved_users/' + key), approvedData);
+                approvedRecords[key] = approvedData;
+                loadApprovedTable(approvedRecords);
+                loadPendingTable(pendingRecords);
+
+                try {
+                    await remove(ref(adminDb, 'pending_users/' + key));
+                    delete pendingRecords[key];
+                } catch (error) {
+                    console.warn('Approved disimpan; pemadaman Pending ditolak:', error);
+                    document.getElementById('approved_notice').textContent =
+                        'Rekod berjaya disimpan dalam Approved. Firebase belum membenarkan pemadaman salinan Pending; salinan tersebut disembunyikan daripada senarai Pending.';
+                }
 
                 alert(`Berjaya approve ${user.nama}! Data telah dipindahkan ke Approved.`);
             } catch (error) {
@@ -698,7 +775,6 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                 ) {
                     rejectedRecords = records;
                     refreshRejectView();
-                    window.switchTab('rejected');
                     return;
                 }
 
@@ -729,7 +805,6 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                 rejectedRecords = nextRecords;
 
                 refreshRejectView();
-                window.switchTab('rejected');
 
                 alert(
                     'Semua maklumat ' +
@@ -855,6 +930,19 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                         Rekod Pelanggan & Reseller Diluluskan
                     </h4>
 
+                    <div class="flex flex-wrap items-end gap-3">
+                        <label class="text-xs text-slate-600 flex-1 min-w-[160px]">Tarikh transaksi
+                            <input id="approved_date_filter" type="date" onchange="filterApproved()" class="block w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        </label>
+                        <label class="text-xs text-slate-600 flex-1 min-w-[200px]">Cari email customer
+                            <input id="approved_email_search" type="search" placeholder="Taip email customer" oninput="filterApproved()" class="block w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        </label>
+                        <button onclick="resetApprovedFilters()" class="px-3 py-2 bg-slate-100 rounded-lg text-sm">Reset</button>
+                    </div>
+                    <p class="text-xs text-slate-500">Transaksi terbaru dipaparkan di atas. Tarikh mengikut waktu Malaysia.</p>
+                    <p id="approved_result_count" class="text-xs text-slate-600"></p>
+                    <p id="approved_notice" class="text-xs text-amber-700" role="status"></p>
+
                     <div class="overflow-x-auto max-h-[450px]">
                         <table class="w-full text-left border-collapse text-sm">
                             <thead>
@@ -930,4 +1018,3 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
     </div>
 </body>
 </html>
-
