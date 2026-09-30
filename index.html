@@ -43,7 +43,9 @@
             get,
             child,
             remove,
-            onValue
+            onValue,
+            update,
+            runTransaction
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const adminFirebaseConfig = {
@@ -179,7 +181,11 @@
 
         // BACA PENDING DAN APPROVED DARI FIREBASE.
         // REJECTED DIBACA DARI SIMPANAN PELAYAR.
+        let realtimeStarted = false;
+
         function initRealtimeListeners() {
+            if (realtimeStarted) return;
+            realtimeStarted = true;
             try {
                 rejectedRecords = readRejectedRecords();
             } catch (error) {
@@ -194,11 +200,136 @@
             onValue(ref(adminDb, 'pending_users'), (snapshot) => {
                 pendingRecords = snapshot.val() || {};
                 loadPendingTable(pendingRecords);
+                schedulePendingEmails(pendingRecords);
+            });
+
+            onValue(ref(adminDb, 'pending_email_jobs'), (snapshot) => {
+                syncEmailTimers(snapshot.val() || {});
             });
 
             onValue(ref(adminDb, 'approved_users'), (snapshot) => {
                 loadApprovedTable(snapshot.val());
             });
+        }
+
+        // Jadual berasingan supaya approval tidak membatalkan pemasa e-mel.
+        const emailTimers = new Map();
+        const emailJobSetup = new Set();
+        const EMAIL_DELAY_MS = 60 * 1000;
+
+        function pendingArrivalTime(user) {
+            // Gunakan timestamp asal jika dibekalkan oleh borang pendaftaran.
+            for (const value of [user.createdAt, user.created_at, user.timestamp]) {
+                if (value == null || value === '') continue;
+                const time = typeof value === 'number'
+                    ? (value < 1e12 ? value * 1000 : value)
+                    : Date.parse(value);
+                if (Number.isFinite(time) && time > 0) return time;
+            }
+            // Tarikh paparan tempatan tidak semestinya boleh diparse dengan tepat.
+            return Date.now();
+        }
+
+        async function schedulePendingEmails(records) {
+            for (const [key, user] of Object.entries(records)) {
+                if (rejectedRecords[key] || emailJobSetup.has(key)) continue;
+                emailJobSetup.add(key);
+                try {
+                    await runTransaction(ref(adminDb, 'pending_email_jobs/' + key), job => {
+                        if (job) return; // Jangan reset jadual selepas refresh.
+                        return {
+                            dueAt: pendingArrivalTime(user) + EMAIL_DELAY_MS,
+                            status: user.email_status === 'sent' ? 'sent' : 'scheduled'
+                        };
+                    });
+                } catch (error) {
+                    console.error('Tidak dapat menjadualkan e-mel Pending:', error);
+                } finally {
+                    emailJobSetup.delete(key);
+                }
+            }
+        }
+
+        function syncEmailTimers(jobs) {
+            for (const [key, timer] of emailTimers) {
+                if (!jobs[key] || jobs[key].status !== 'scheduled') {
+                    clearTimeout(timer);
+                    emailTimers.delete(key);
+                }
+            }
+            for (const [key, job] of Object.entries(jobs)) {
+                if (job.status !== 'scheduled' || emailTimers.has(key)) continue;
+                const delay = Math.max(0, Number(job.dueAt) - Date.now());
+                if (!Number.isFinite(delay)) continue;
+                emailTimers.set(key, setTimeout(() => {
+                    emailTimers.delete(key);
+                    sendPendingEmail(key).catch(error =>
+                        console.error('Ralat penghantaran e-mel Pending:', error)
+                    );
+                }, Math.min(delay, 2147483647)));
+            }
+        }
+
+        async function saveEmailStatus(key, fields) {
+            // Kemas kini medan sahaja; jangan timpa maklumat akaun/approval.
+            for (const section of ['pending_users', 'approved_users']) {
+                const recordRef = ref(adminDb, section + '/' + key);
+                await runTransaction(recordRef, record => {
+                    if (!record) return;
+                    return { ...record, ...fields };
+                });
+            }
+        }
+
+        async function sendPendingEmail(key) {
+            if (!adminAuth.currentUser || rejectedRecords[key]) return;
+            const jobRef = ref(adminDb, 'pending_email_jobs/' + key);
+            // Hanya satu tab/admin boleh menuntut penghantaran ini.
+            const claim = await runTransaction(jobRef, job => {
+                if (!job || job.status !== 'scheduled' || job.dueAt > Date.now()) return;
+                return { ...job, status: 'sending', startedAt: new Date().toISOString() };
+            });
+            if (!claim.committed) return;
+            let sent = false;
+            try {
+                let snapshot = await get(ref(adminDb, 'pending_users/' + key));
+                if (!snapshot.exists()) {
+                    snapshot = await get(ref(adminDb, 'approved_users/' + key));
+                }
+                if (!snapshot.exists()) {
+                    await update(jobRef, { status: 'cancelled' });
+                    return;
+                }
+                const user = snapshot.val();
+                if (user.email_status !== 'sent') {
+                    if (!window.emailjs || typeof window.emailjs.send !== 'function') {
+                        throw new Error('EmailJS tidak tersedia.');
+                    }
+                    await window.emailjs.send('service_hd5rpgc', 'template_9sh4gw2', {
+                        to_name: user.nama,
+                        to_email: user.email,
+                        password: user.password
+                    });
+                }
+                sent = true;
+                const fields = {
+                    email_status: 'sent',
+                    email_sent_at: user.email_sent_at || new Date().toISOString(),
+                    email_error: null
+                };
+                await update(jobRef, { status: 'sent', sentAt: fields.email_sent_at });
+                await saveEmailStatus(key, fields);
+            } catch (error) {
+                // Jika penghantaran berjaya tetapi status gagal disimpan, jangan hantar semula.
+                if (sent) {
+                    console.error('E-mel dihantar tetapi status gagal disimpan:', error);
+                    return;
+                }
+                const message = error?.text || error?.message || String(error);
+                await update(jobRef, { status: 'failed', error: message });
+                await saveEmailStatus(key, { email_status: 'failed', email_error: message });
+                console.warn('E-mel automatik Pending gagal:', error);
+            }
         }
 
         // Selaraskan tab dalam pelayar yang sama.
@@ -584,7 +715,7 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                     approvedAt: new Date().toISOString(),
                     account_status: accountStatus,
                     firebase_uid: firebaseUid || user.firebase_uid || null,
-                    email_status: 'pending'
+                    email_status: user.email_status || 'pending'
                 };
 
                 await set(
@@ -594,70 +725,21 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
 
                 await remove(pendingRef);
 
-                // Emel dihantar secara berasingan.
-                let emailSent = false;
-                let emailErrorMessage = '';
-
-                try {
-                    if (
-                        !window.emailjs ||
-                        typeof emailjs.send !== 'function'
-                    ) {
-                        throw new Error('EmailJS tidak tersedia.');
-                    }
-
-                    const templateParams = {
-                        to_name: user.nama,
-                        to_email: user.email,
-                        password: user.password
-                    };
-
-                    await emailjs.send(
-                        'service_hd5rpgc',
-                        'template_9sh4gw2',
-                        templateParams
-                    );
-
-                    emailSent = true;
-
-                    await set(
-                        ref(adminDb, 'approved_users/' + key),
-                        {
-                            ...approvedData,
-                            email_status: 'sent',
-                            email_sent_at: new Date().toISOString()
-                        }
-                    );
-                } catch (emailError) {
-                    emailErrorMessage =
-                        emailError?.text ||
-                        emailError?.message ||
-                        String(emailError || 'EmailJS gagal');
-
-                    console.warn(
-                        'Approval berjaya tetapi EmailJS gagal:',
-                        emailError
-                    );
-
-                    await set(
-                        ref(adminDb, 'approved_users/' + key),
-                        {
-                            ...approvedData,
-                            email_status: 'failed',
-                            email_error: emailErrorMessage
-                        }
-                    );
+                // Approval tidak menghantar e-mel; jadual Pending kekal aktif.
+                const jobSnapshot = await get(ref(adminDb, 'pending_email_jobs/' + key));
+                const job = jobSnapshot.val();
+                if (job?.status === 'sent') {
+                    await update(ref(adminDb, 'approved_users/' + key), {
+                        email_status: 'sent',
+                        email_sent_at: job.sentAt
+                    });
+                } else if (job?.status === 'failed') {
+                    await update(ref(adminDb, 'approved_users/' + key), {
+                        email_status: 'failed',
+                        email_error: job.error || ''
+                    });
                 }
-
-                if (emailSent) {
-                    alert(
-                        `Berjaya approve ${user.nama}! Akaun telah diproses dan emel berjaya dihantar.`
-                    );
-                } else {
-                    alert(
-                        `Berjaya approve ${user.nama}!\n\nAkaun & rekod Approved telah disimpan.\nEmailJS tidak berjaya dihantar (kemungkinan kredit habis).\n\nGunakan butang WhatsApp di tab Approved untuk hantar maklumat login kepada customer.`
-                    );
-                }
+                alert(`Berjaya approve ${user.nama}! Akaun & rekod Approved telah disimpan.`);
             } catch (error) {
                 console.error('Ralat approval:', error);
 
