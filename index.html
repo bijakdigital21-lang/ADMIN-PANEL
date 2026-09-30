@@ -32,17 +32,13 @@
 
         import {
             getAuth,
-            signInWithEmailAndPassword,
-            createUserWithEmailAndPassword
+            signInWithEmailAndPassword
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
         import {
             getDatabase,
             ref,
-            set,
             get,
-            child,
-            remove,
             onValue,
             update,
             runTransaction
@@ -58,23 +54,9 @@
             appId: "1:523370880023:web:883b422a9611abb2889052"
         };
 
-        const targetFirebaseConfig = {
-            apiKey: "AIzaSyDXc06B8WLtqjkG0aScBHrd3L3M-n_5okc",
-            authDomain: "grammar-hub-6af80.firebaseapp.com",
-            databaseURL: "https://grammar-hub-6af80-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "grammar-hub-6af80",
-            storageBucket: "grammar-hub-6af80.firebasestorage.app",
-            messagingSenderId: "1092171234032",
-            appId: "1:1092171234032:web:7cc8efefb812993500e035"
-        };
-
         const adminApp = initializeApp(adminFirebaseConfig, "AdminApp");
         const adminAuth = getAuth(adminApp);
         const adminDb = getDatabase(adminApp);
-
-        const targetApp = initializeApp(targetFirebaseConfig, "TargetApp");
-        const targetAuth = getAuth(targetApp);
-        const targetDb = getDatabase(targetApp);
 
         // LOG MASUK ADMIN
         window.checkAdminLogin = async function () {
@@ -650,105 +632,56 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
             }
         };
 
-        // PROSES APPROVE
+        // APPROVE HANYA MEMINDAHKAN REKOD; TIADA CIPTA AKAUN ATAU HANTAR E-MEL.
+        const approvalsInProgress = new Set();
+
         window.approveUser = async function (key) {
-            const pendingRef = ref(adminDb, 'pending_users/' + key);
+            if (approvalsInProgress.has(key)) return;
+            if (!adminAuth.currentUser) {
+                alert('Sila log masuk sebagai admin dahulu.');
+                return;
+            }
 
+            approvalsInProgress.add(key);
+            let stage = 'membaca rekod Pending';
             try {
-                const snapshot = await get(pendingRef);
-
+                const snapshot = await get(ref(adminDb, 'pending_users/' + key));
                 if (!snapshot.exists()) {
-                    alert("Data tidak dijumpai.");
+                    alert('Data tidak dijumpai. Rekod mungkin sudah diluluskan.');
                     return;
                 }
 
                 const user = snapshot.val();
+                if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
-                if (!confirm(
-                    `Adakah anda pasti untuk approve ${user.nama}?`
-                )) {
-                    return;
-                }
+                stage = 'memindahkan rekod Pending ke Approved';
+                // Satu kemas kini atomik: kedua-dua perubahan berjaya atau tiada
+                // perubahan disimpan. Semua maklumat asal dikekalkan.
+                await update(ref(adminDb), {
+                    ['approved_users/' + key]: {
+                        ...user,
+                        approvedAt: new Date().toISOString()
+                    },
+                    ['pending_users/' + key]: null
+                });
 
-                let accountStatus = 'created';
-                let firebaseUid = null;
-
-                // Cipta akaun Grammar Hub.
-                try {
-                    const userCredential =
-                        await createUserWithEmailAndPassword(
-                            targetAuth,
-                            user.email,
-                            user.password
-                        );
-
-                    firebaseUid = userCredential.user.uid;
-
-                    await set(ref(targetDb, 'users/' + firebaseUid), {
-                        nama: user.nama,
-                        email: user.email,
-                        nofon: user.nofon,
-                        reseller_nama: user.reseller_nama || '',
-                        reseller_email: user.reseller_email || '',
-                        reseller_nofon: user.reseller_nofon || '',
-                        createdAt: new Date().toISOString()
-                    });
-                } catch (authError) {
-                    if (
-                        authError &&
-                        authError.code === 'auth/email-already-in-use'
-                    ) {
-                        accountStatus = 'already_exists';
-
-                        console.warn(
-                            'Akaun sudah wujud. Approval diteruskan.',
-                            authError
-                        );
-                    } else {
-                        throw authError;
-                    }
-                }
-
-                // Simpan rekod Approved dahulu.
-                const approvedData = {
-                    ...user,
-                    approvedAt: new Date().toISOString(),
-                    account_status: accountStatus,
-                    firebase_uid: firebaseUid || user.firebase_uid || null,
-                    email_status: user.email_status || 'pending'
-                };
-
-                await set(
-                    ref(adminDb, 'approved_users/' + key),
-                    approvedData
-                );
-
-                await remove(pendingRef);
-
-                // Approval tidak menghantar e-mel; jadual Pending kekal aktif.
-                const jobSnapshot = await get(ref(adminDb, 'pending_email_jobs/' + key));
-                const job = jobSnapshot.val();
-                if (job?.status === 'sent') {
-                    await update(ref(adminDb, 'approved_users/' + key), {
-                        email_status: 'sent',
-                        email_sent_at: job.sentAt
-                    });
-                } else if (job?.status === 'failed') {
-                    await update(ref(adminDb, 'approved_users/' + key), {
-                        email_status: 'failed',
-                        email_error: job.error || ''
-                    });
-                }
-                alert(`Berjaya approve ${user.nama}! Akaun & rekod Approved telah disimpan.`);
+                alert(`Berjaya approve ${user.nama}! Data telah dipindahkan ke Approved.`);
             } catch (error) {
-                console.error('Ralat approval:', error);
-
-                const message =
-                    error?.message ||
-                    error?.code ||
-                    String(error || 'Ralat tidak diketahui');
-
-                alert('Gagal memproses kelulusan: ' + message);
+                console.error('Ralat approval ketika ' + stage + ':', error);
+                const message = error?.message || error?.code || String(error);
+                if (/permission[ _-]?denied/i.test(message)) {
+                    alert(
+                        'Firebase menolak akses ketika ' + stage + '. ' +
+                        'Semak Realtime Database Rules projek admin-f72e5: ' +
+                        'akaun admin perlu dibenarkan membaca pending_users, ' +
+                        'menulis approved_users dan memadam rekod pending_users. ' +
+                        'Rekod Pending tidak dipadam oleh operasi ini.'
+                    );
+                } else {
+                    alert('Gagal memproses kelulusan ketika ' + stage + ': ' + message);
+                }
+            } finally {
+                approvalsInProgress.delete(key);
             }
         };
 
@@ -997,3 +930,4 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
     </div>
 </body>
 </html>
+
