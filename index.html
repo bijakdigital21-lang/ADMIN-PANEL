@@ -94,31 +94,44 @@
             });
         }
 
+        let pendingRecords = {};
+        let legacyRejectedRecords = {};
+
+        // Status menentukan tab. Data asal kekal lengkap dalam pangkalan data.
+        function renderRegistrationTables() {
+            const pending = {};
+            const rejected = { ...legacyRejectedRecords };
+            Object.entries(pendingRecords).forEach(([key, user]) => {
+                if (user.status === 'rejected') {
+                    rejected[key] = user;
+                } else {
+                    pending[key] = user;
+                }
+            });
+            loadPendingTable(pending);
+            loadRejectedTable(rejected);
+        }
+
         function initRealtimeListeners() {
             onValue(ref(adminDb, 'pending_users'), (snapshot) => {
-                const data = snapshot.val();
-                loadPendingTable(data);
+                pendingRecords = snapshot.val() || {};
+                renderRegistrationTables();
+            }, (error) => {
+                console.error('Ralat membaca pendaftaran:', error);
+                alert('Gagal membaca rekod pendaftaran: ' + error.message);
             });
 
             onValue(ref(adminDb, 'approved_users'), (snapshot) => {
-                const data = snapshot.val();
-                loadApprovedTable(data);
+                loadApprovedTable(snapshot.val());
             });
 
+            // Kekalkan rekod Rejected daripada versi lama jika boleh dibaca.
             onValue(ref(adminDb, 'rejected_users'), (snapshot) => {
-                const data = snapshot.val();
-                loadRejectedTable(data);
+                legacyRejectedRecords = snapshot.val() || {};
+                renderRegistrationTables();
             }, (error) => {
-                console.error('Ralat membaca rekod Rejected:', error);
-                const tbody = document.getElementById('rejected_table_body');
-                tbody.innerHTML = '';
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = 4;
-                td.className = 'text-center py-4 text-rose-600';
-                td.textContent = 'Rekod Rejected tidak dapat dibaca. Semak sambungan dan kebenaran baca rejected_users dalam Firebase Database Rules.';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
+                console.warn('Rekod Rejected lama tidak dapat dibaca:', error);
+                renderRegistrationTables();
             });
         }
 
@@ -269,6 +282,10 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                 }
 
                 const user = snapshot.val();
+                if (user.status === 'rejected') {
+                    alert('Rekod ini telah dialihkan ke Rejected.');
+                    return;
+                }
                 if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
                 let accountStatus = 'created';
@@ -320,42 +337,36 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
             }
         }
 
-        // 6. Proses Reject: pindahkan ke rejected_users supaya rekod kekal tersimpan.
+        // 6. Reject hanya menukar status rekod, tanpa proses akaun atau emel.
+        const rejectingKeys = new Set();
         window.rejectUser = async function(key) {
+            if (rejectingKeys.has(key)) return;
+            rejectingKeys.add(key);
             try {
                 const pendingRef = ref(adminDb, 'pending_users/' + key);
                 const snapshot = await get(pendingRef);
-
                 if (!snapshot.exists()) {
-                    alert('Data tidak dijumpai.');
+                    alert('Data tidak dijumpai. Sila muat semula senarai.');
                     return;
                 }
-
                 const user = snapshot.val();
-                if (!confirm(`Adakah anda pasti untuk REJECT permohonan daripada ${user.nama}?`)) return;
-
-                const rejectedData = {
-                    ...user,
-                    rejectedAt: new Date().toISOString(),
-                    status: 'rejected'
-                };
-
-                // Satu operasi atomik: semua data disimpan di Rejected dan Pending
-                // dibuang serentak. Jika gagal, rekod asal kekal di Pending.
-                await update(ref(adminDb), {
-                    ['rejected_users/' + key]: rejectedData,
-                    ['pending_users/' + key]: null
-                });
-
+                if (user.status !== 'rejected') {
+                    // Kemas kini dua medan sahaja; semua data pelanggan/reseller kekal.
+                    const rejectedAt = new Date().toISOString();
+                    await update(pendingRef, { status: 'rejected', rejectedAt });
+                    pendingRecords[key] = { ...user, status: 'rejected', rejectedAt };
+                } else {
+                    pendingRecords[key] = user;
+                }
+                renderRegistrationTables();
                 window.switchTab('rejected');
-                alert(`Permohonan ${user.nama} telah ditolak dan semua data disimpan di bahagian Rejected.`);
+                alert(`Data ${user.nama || 'pelanggan'} telah dialihkan ke bahagian Rejected.`);
             } catch (error) {
-                console.error('Ralat reject:', error);
-                const message = error?.message || error?.code || String(error || 'Ralat tidak diketahui');
-                const permissionDenied = /permission.?denied/i.test(String(error?.code || '') + ' ' + message);
-                alert('Gagal menolak permohonan: ' + message + '\n\nRekod Pending tidak dipadam.' + (permissionDenied
-                    ? '\nSemak Firebase Database Rules: admin perlu kebenaran tulis pada rejected_users dan padam pada pending_users.'
-                    : ' Sila semak sambungan dan cuba lagi.'));
+                console.error('Ralat mengalihkan rekod:', error);
+                const message = error?.message || error?.code || String(error);
+                alert('Data belum berjaya dialihkan: ' + message + '\n\nRekod asal tidak dipadam.');
+            } finally {
+                rejectingKeys.delete(key);
             }
         }
     </script>
