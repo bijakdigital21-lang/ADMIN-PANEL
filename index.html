@@ -96,19 +96,24 @@
 
         let pendingRecords = {};
         let legacyRejectedRecords = {};
+        let legacyApprovedRecords = {};
 
         // Status menentukan tab. Data asal kekal lengkap dalam pangkalan data.
         function renderRegistrationTables() {
             const pending = {};
+            const approved = { ...legacyApprovedRecords };
             const rejected = { ...legacyRejectedRecords };
             Object.entries(pendingRecords).forEach(([key, user]) => {
-                if (user.status === 'rejected') {
+                if (user.status === 'approved') {
+                    approved[key] = user;
+                } else if (user.status === 'rejected') {
                     rejected[key] = user;
                 } else {
                     pending[key] = user;
                 }
             });
             loadPendingTable(pending);
+            loadApprovedTable(approved);
             loadRejectedTable(rejected);
         }
 
@@ -122,7 +127,11 @@
             });
 
             onValue(ref(adminDb, 'approved_users'), (snapshot) => {
-                loadApprovedTable(snapshot.val());
+                legacyApprovedRecords = snapshot.val() || {};
+                renderRegistrationTables();
+            }, (error) => {
+                console.warn('Rekod Approved lama tidak dapat dibaca:', error);
+                renderRegistrationTables();
             });
 
             // Kekalkan rekod Rejected daripada versi lama jika boleh dibaca.
@@ -213,7 +222,7 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
 
 💙 Selamat belajar!`;
 
-                let cleanPhone = user.nofon.replace(/\D/g,'');
+                let cleanPhone = String(user.nofon ?? '').replace(/\D/g,'');
                 if(cleanPhone.startsWith('0')) {
                     cleanPhone = '6' + cleanPhone;
                 }
@@ -268,79 +277,105 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
             });
         }
 
-        // 5. Proses Approve
-        // Cipta akaun dan simpan rekod Approved tanpa menghantar emel automatik.
+        // 5. Cipta akaun Firebase, kemudian simpan kelulusan pada rekod asal.
+        // Semua medan pendaftaran dikekalkan; status menentukan tab paparan.
+        const approvingKeys = new Set();
         window.approveUser = async function(key) {
+            if (approvingKeys.has(key) || rejectingKeys.has(key)) return;
+            approvingKeys.add(key);
             const pendingRef = ref(adminDb, 'pending_users/' + key);
+            let accountReady = false;
 
             try {
                 const snapshot = await get(pendingRef);
-
                 if (!snapshot.exists()) {
-                    alert("Data tidak dijumpai.");
+                    alert('Data tidak dijumpai. Sila muat semula senarai.');
                     return;
                 }
-
                 const user = snapshot.val();
                 if (user.status === 'rejected') {
                     alert('Rekod ini telah dialihkan ke Rejected.');
                     return;
                 }
+                if (user.status === 'approved') {
+                    pendingRecords[key] = user;
+                    renderRegistrationTables();
+                    window.switchTab('approved');
+                    return;
+                }
                 if (!confirm(`Adakah anda pasti untuk approve ${user.nama}?`)) return;
 
                 let accountStatus = 'created';
-                let firebaseUid = null;
-
-                // 1. Cipta akaun Grammar Hub.
-                // Jika percubaan lama sudah sempat cipta akaun tetapi proses seterusnya gagal,
-                // kita benarkan proses approval diteruskan tanpa mencipta akaun kedua.
+                let firebaseUid = user.firebase_uid || null;
+                let credential = null;
                 try {
-                    const userCredential = await createUserWithEmailAndPassword(targetAuth, user.email, user.password);
-                    firebaseUid = userCredential.user.uid;
-
-                    await set(ref(targetDb, 'users/' + firebaseUid), {
-                        nama: user.nama,
-                        email: user.email,
-                        nofon: user.nofon,
-                        reseller_nama: user.reseller_nama || '',
-                        reseller_email: user.reseller_email || '',
-                        reseller_nofon: user.reseller_nofon || '',
-                        createdAt: new Date().toISOString()
-                    });
+                    credential = await createUserWithEmailAndPassword(targetAuth, user.email, user.password);
+                    firebaseUid = credential.user.uid;
                 } catch (authError) {
-                    if (authError && authError.code === 'auth/email-already-in-use') {
-                        accountStatus = 'already_exists';
-                        console.warn('Akaun sudah wujud. Approval diteruskan.', authError);
-                    } else {
-                        throw authError;
+                    if (authError?.code !== 'auth/email-already-in-use') throw authError;
+                    accountStatus = 'already_exists';
+                    // Sambung semula akaun yang tercipta pada percubaan terdahulu jika masih aktif.
+                    if (targetAuth.currentUser?.email?.toLowerCase() === String(user.email).toLowerCase()) {
+                        firebaseUid = targetAuth.currentUser.uid;
+                    }
+                }
+                accountReady = true;
+
+                // Kegagalan profil tidak membatalkan akaun Auth atau menghalang rekod Approved.
+                let profileStatus = 'not_updated';
+                if (firebaseUid && targetAuth.currentUser?.uid === firebaseUid) {
+                    try {
+                        await update(ref(targetDb, 'users/' + firebaseUid), {
+                            nama: user.nama || '',
+                            email: user.email,
+                            nofon: user.nofon ?? '',
+                            reseller_nama: user.reseller_nama || '',
+                            reseller_email: user.reseller_email || '',
+                            reseller_nofon: user.reseller_nofon || '',
+                            ...(credential ? { createdAt: new Date().toISOString() } : {})
+                        });
+                        profileStatus = 'saved';
+                    } catch (profileError) {
+                        profileStatus = 'failed';
+                        console.warn('Profil pengguna belum dapat disimpan:', profileError);
                     }
                 }
 
-                // 2. Simpan rekod Approved.
-                const approvedData = {
-                    ...user,
+                // Satu kemas kini pada laluan pendaftaran yang sama seperti fungsi Reject.
+                // Tiada pemadaman: semua data asal kekal termasuk medan tambahan.
+                const approvalChanges = {
+                    status: 'approved',
                     approvedAt: new Date().toISOString(),
                     account_status: accountStatus,
-                    firebase_uid: firebaseUid || user.firebase_uid || null,
+                    firebase_uid: firebaseUid,
+                    profile_status: profileStatus,
                     email_status: 'disabled'
                 };
+                await update(pendingRef, approvalChanges);
+                pendingRecords[key] = { ...user, ...approvalChanges };
+                renderRegistrationTables();
+                window.switchTab('approved');
 
-                await set(ref(adminDb, 'approved_users/' + key), approvedData);
-                await remove(pendingRef);
-
-                alert(`Berjaya approve ${user.nama}! Akaun & rekod Approved telah disimpan.\n\nGunakan butang WhatsApp di tab Approved untuk hantar maklumat login kepada customer.`);
-
+                const profileNotice = profileStatus === 'failed'
+                    ? '\n\nAkaun Firebase tersedia, tetapi profil tambahan gagal disimpan. Semak kebenaran database Grammar Hub.'
+                    : '';
+                alert(`Berjaya approve ${user.nama}! Rekod lengkap telah disimpan di bahagian Approved.\n\nGunakan butang WhatsApp di tab Approved untuk hantar maklumat login kepada customer.${profileNotice}`);
             } catch (error) {
                 console.error('Ralat approval:', error);
-                const message = error?.message || error?.code || String(error || 'Ralat tidak diketahui');
-                alert('Gagal memproses kelulusan: ' + message);
+                const message = error?.message || error?.code || String(error);
+                const accountNotice = accountReady
+                    ? '\n\nAkaun Firebase sudah tersedia. Tekan Approve semula untuk cuba menyimpan kelulusan.'
+                    : '';
+                alert('Kelulusan belum berjaya disimpan: ' + message + accountNotice + '\n\nRekod asal tidak dipadam.');
+            } finally {
+                approvingKeys.delete(key);
             }
         }
 
         // 6. Reject hanya menukar status rekod, tanpa proses akaun atau emel.
         const rejectingKeys = new Set();
         window.rejectUser = async function(key) {
-            if (rejectingKeys.has(key)) return;
+            if (rejectingKeys.has(key) || approvingKeys.has(key)) return;
             rejectingKeys.add(key);
             try {
                 const pendingRef = ref(adminDb, 'pending_users/' + key);
@@ -350,6 +385,10 @@ Hubungi kami melalui WhatsApp dan kami sedia membantu.
                     return;
                 }
                 const user = snapshot.val();
+                if (user.status === 'approved') {
+                    alert('Rekod ini telah diluluskan.');
+                    return;
+                }
                 if (user.status !== 'rejected') {
                     // Kemas kini dua medan sahaja; semua data pelanggan/reseller kekal.
                     const rejectedAt = new Date().toISOString();
